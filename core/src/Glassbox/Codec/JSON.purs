@@ -363,11 +363,12 @@ refusalDeclCodec = Codec.codec' decode encode
 specCodec :: CA.JsonCodec Spec
 specCodec = Codec.codec' decode encode
   where
-  encode s = obj
+  encode s = obj $
     [ Tuple "glassbox" (Codec.encode CA.int s.version)
     , Tuple "id" (J.fromString s.id)
     , Tuple "title" (J.fromString s.title)
-    , Tuple "initial" (Codec.encode stateIdCodec s.initial)
+    ] <> notesField s.notes <>
+    [ Tuple "initial" (Codec.encode stateIdCodec s.initial)
     , Tuple "states" (J.fromArray (map (Codec.encode stateDeclCodec) s.states))
     , Tuple "events" (J.fromArray (map (Codec.encode eventDeclCodec) s.events))
     , Tuple "config" (J.fromArray (map (Codec.encode configDeclCodec) s.config))
@@ -386,6 +387,7 @@ specCodec = Codec.codec' decode encode
     when (version > formatVersion)
       (Left (CA.AtKey "glassbox" (CA.TypeMismatch ("format version " <> show version <> "; this build reads " <> show formatVersion))))
     id <- requiredString o "id"
+    notes <- listAt o "notes" CA.string
     initial <- StateId <$> requiredString o "initial"
     states <- listAt o "states" stateDeclCodec
     events <- listAt o "events" eventDeclCodec
@@ -397,6 +399,7 @@ specCodec = Codec.codec' decode encode
     pure
       { version
       , id
+      , notes
       , title: fromMaybe id (stringAt o "title")
       , initial
       , states
@@ -411,6 +414,13 @@ specCodec = Codec.codec' decode encode
 -- =============================================================================
 -- Helpers
 -- =============================================================================
+
+-- | Omitted entirely when there is nothing to say, so the smallest artifact
+-- | stays small.
+notesField :: Array String -> Array (Tuple String Json)
+notesField = case _ of
+  [] -> []
+  ns -> [ Tuple "notes" (J.fromArray (map J.fromString ns)) ]
 
 obj :: Array (Tuple String Json) -> Json
 obj = J.fromObject <<< Object.fromFoldable

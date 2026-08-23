@@ -410,6 +410,38 @@ roundTripUnits = do
 
   pure [ a, b, c, d, e, f, g ]
 
+-- | Prose is content, not a comment the codec may discard.
+-- |
+-- | Until 2026-08-23 the corpus carried seventy lines of design commentary in a
+-- | `_note` key that `Spec` did not model, so every decode silently dropped it —
+-- | and the behavioural round-trip test passed anyway, because it compares
+-- | outcomes rather than bytes. A format meant to be authored and re-saved
+-- | cannot lose the reasoning behind the thing it describes.
+notesUnits :: Effect (Array Boolean)
+notesUnits = do
+  section "Codec.notes — prose survives a round trip"
+
+  let withProse = blank { notes = [ "why this exists", "and a second: with a colon" ] }
+
+  a <- check "notes decode from the wire"
+    ( case parseSpec """{"glassbox":1,"id":"x","initial":"a","states":[{"id":"a"}],"notes":["hello"]}""" of
+        Right sp -> sp.notes == [ "hello" ]
+        Left _ -> false
+    )
+  b <- check "notes survive encode then decode"
+    ( case decodeSpec (encodeSpec withProse) of
+        Right back -> back.notes == withProse.notes
+        Left _ -> false
+    )
+  c <- check "a machine with nothing to say emits no notes key at all"
+    (not (contains (Pattern "notes") (printSpec blank)))
+  d <- check "absent notes decode as empty rather than failing"
+    ( case parseSpec """{"glassbox":1,"id":"x","initial":"a","states":[{"id":"a"}]}""" of
+        Right sp -> sp.notes == []
+        Left _ -> false
+    )
+  pure [ a, b, c, d ]
+
 codecUnits :: Effect (Array Boolean)
 codecUnits = do
   a <- envelopeUnits
@@ -417,4 +449,5 @@ codecUnits = do
   c <- ruleUnits
   d <- unwrittenLintUnits
   e <- roundTripUnits
-  pure (a <> b <> c <> d <> e)
+  f <- notesUnits
+  pure (a <> b <> c <> d <> e <> f)

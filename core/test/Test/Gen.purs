@@ -173,6 +173,9 @@ genSpec = do
   nConfig <- chooseInt 0 2
   nFacts <- chooseInt 0 2
   nRefusals <- chooseInt 0 2
+  -- Prose is part of the value now, so the round-trip property has to carry it.
+  nNotes <- chooseInt 0 2
+  let notes = take nNotes [ "a note", "another: with a colon" ]
 
   let stateIds = map StateId (take nStates [ "s0", "s1", "s2", "s3", "s4" ])
   let eventIds = map EventId (take nEvents [ "e0", "e1", "e2", "e3" ])
@@ -199,6 +202,7 @@ genSpec = do
 
   pure
     { version: 1
+    , notes: notes
     , id: "generated"
     , title
     , initial

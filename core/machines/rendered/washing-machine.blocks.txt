@@ -1,3 +1,28 @@
+# Chosen because its natural authoring is a SEQUENCE — fill, then wash, then
+# drain, then rinse, then spin — and the format has no word for 'and then'.
+# Every step of the chain is hand-wired here: each state names its successor
+# on `step-done`. Reordering the programme means editing every rule in the
+# chain, which is exactly the kind of restructuring the graphical editor is
+# supposed to make free.
+#
+# The sharper problem is RINSE COUNT. A machine that rinses three times has
+# no more modes than one that rinses twice — rinsing is rinsing — so the
+# count cannot be states without duplicating the cycle. And it cannot be
+# config either, because config is read, never counted down: this format
+# gives a machine no memory beyond the state it is in.
+#
+# The resolution is the same one the elevator forced: the host keeps the
+# number and reports a fact. `more-rinses` is the drum controller counting,
+# not the machine.
+#
+# Pause makes it three. Resuming must return to whatever step was
+# interrupted — a Harel history state — and this format has no history, so
+# `paused-in-*` facts carry it and the host remembers. Three instances of one
+# rule: COUNTS, INDICES, POSITIONS AND HISTORY LIVE IN THE HOST, because a
+# machine here has no memory beyond the state it is in. Nothing in the format
+# says so, and a designer who does not know it will build a state per rinse
+# and a paused-state per step.
+
 machine  washing-machine  "Washing machine"
 format   1
 initial  idle
@@ -41,79 +66,79 @@ refusals
   not-running  "nothing is running"
 
 idle:
-  start                         | not door-shut  -> refuse door-ajar
-                                | otherwise      -> locking
-  open, cancel, step-done                        -> stay
-  pause, resume                                  -> refuse not-running
+  start                    when not door-shut  -> refuse door-ajar
+                           else                -> locking
+  open, cancel, step-done                      -> stay
+  pause, resume                                -> refuse not-running
 
 locking:
-  step-done                     | has-prewash  -> prewashing
-                                | otherwise    -> filling
-  cancel                                       -> unlocking
-  open                                         -> refuse door-locked
-  pause                                        -> paused
-  resume, start                                -> stay
+  step-done      when has-prewash  -> prewashing
+                 else              -> filling
+  cancel                           -> unlocking
+  open                             -> refuse door-locked
+  pause                            -> paused
+  resume, start                    -> stay
 
 prewashing:
-  step-done, cancel             -> draining
-  pause                         -> paused
-  open                          -> refuse door-locked
-  resume, start                 -> stay
+  step-done, cancel  -> draining
+  pause              -> paused
+  open               -> refuse door-locked
+  resume, start      -> stay
 
 filling:
-  step-done                     -> washing
-  pause                         -> paused
-  cancel                        -> draining
-  open                          -> refuse door-locked
-  resume, start                 -> stay
+  step-done      -> washing
+  pause          -> paused
+  cancel         -> draining
+  open           -> refuse door-locked
+  resume, start  -> stay
 
 washing:
-  step-done, cancel             -> draining
-  pause                         -> paused
-  open                          -> refuse door-locked
-  resume, start                 -> stay
+  step-done, cancel  -> draining
+  pause              -> paused
+  open               -> refuse door-locked
+  resume, start      -> stay
 
 draining:
-  step-done                     | more-rinses  -> rinse-filling
-                                | otherwise    -> spinning
-  pause, cancel, resume, start                 -> stay
-  open                                         -> refuse door-locked
+  step-done                     when more-rinses  -> rinse-filling
+                                else              -> spinning
+  pause, cancel, resume, start                    -> stay
+  open                                            -> refuse door-locked
 
 rinse-filling:
-  step-done                     -> rinsing
-  pause                         -> paused
-  cancel                        -> draining
-  open                          -> refuse door-locked
-  resume, start                 -> stay
+  step-done      -> rinsing
+  pause          -> paused
+  cancel         -> draining
+  open           -> refuse door-locked
+  resume, start  -> stay
 
 rinsing:
-  step-done, cancel             -> draining
-  pause                         -> paused
-  open                          -> refuse door-locked
-  resume, start                 -> stay
+  step-done, cancel  -> draining
+  pause              -> paused
+  open               -> refuse door-locked
+  resume, start      -> stay
 
 spinning:
-  step-done, cancel             -> unlocking
-  pause                         -> paused
-  open                          -> refuse door-locked
-  resume, start                 -> stay
+  step-done, cancel  -> unlocking
+  pause              -> paused
+  open               -> refuse door-locked
+  resume, start      -> stay
 
 unlocking:
-  step-done                     | drum-wet   -> refuse still-wet
-                                | otherwise  -> done
-  open                                       -> refuse door-locked
-  pause, resume, cancel, start               -> stay
+  step-done                     when drum-wet  -> refuse still-wet
+                                else           -> done
+  open                                         -> refuse door-locked
+  pause, resume, cancel, start                 -> stay
 
 done:  final
-  open                          -> idle
-  start                         -> locking
-  pause, resume                 -> refuse not-running
-  cancel, step-done             -> stay
+  open               -> idle
+  start              -> locking
+  pause, resume      -> refuse not-running
+  cancel, step-done  -> stay
 
 paused:
-  resume                        | paused-in-rinse  -> rinsing
-                                | paused-in-fill   -> filling
-                                | otherwise        -> washing
-  cancel                                           -> draining
-  open                                             -> refuse door-locked
-  pause, start, step-done                          -> stay
+  resume                   when paused-in-rinse  -> rinsing
+                           elif paused-in-fill   -> filling
+                           else                  -> washing
+  cancel                                         -> draining
+  open                                           -> refuse door-locked
+  pause, start, step-done                        -> stay

@@ -59,6 +59,7 @@ blank :: Spec
 blank =
   { version: 1
   , id: "fixture"
+  , notes: []
   , title: "Fixture"
   , initial: StateId "a"
   , states: []

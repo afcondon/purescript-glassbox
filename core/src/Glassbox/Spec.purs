@@ -282,10 +282,17 @@ type RefusalDecl =
   }
 
 -- | A whole machine, as decoded from an artifact.
+-- |
+-- | `notes` is prose the author wrote about the machine, and it is **part of
+-- | the value** rather than a comment the codec throws away. It has to be: an
+-- | artifact that cannot carry the reasoning behind it loses that reasoning the
+-- | first time anything saves the file, and the corpus in `core/machines/` was
+-- | already carrying seventy lines of it before the format could hold any.
 type Spec =
   { version :: Int
   , id :: String
   , title :: String
+  , notes :: Array String
   , initial :: StateId
   , states :: Array StateDecl
   , events :: Array EventDecl

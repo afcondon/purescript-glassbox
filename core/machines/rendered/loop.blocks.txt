@@ -29,37 +29,37 @@ refusals
   overdub-in-play  "stopped loops overdub from Playing"
 
 empty:
-  record                | converter-held      -> refuse converter-busy
-                        | count-in-beats > 0  -> armed
-                        | otherwise           -> recording
-  play                                        -> refuse nothing-yet
-  stop, clear, elapsed                        -> stay
+  record                when converter-held      -> refuse converter-busy
+                        elif count-in-beats > 0  -> armed
+                        else                     -> recording
+  play                                           -> refuse nothing-yet
+  stop, clear, elapsed                           -> stay
 
 armed:  after count-in-beats fires elapsed
-  elapsed               -> recording
-  record, stop, clear   -> empty
-  play                  -> stay
+  elapsed              -> recording
+  record, stop, clear  -> empty
+  play                 -> stay
 
 recording:
-  record, play          -> playing
-  stop                  -> stopped
-  clear                 -> empty
-  elapsed               -> stay
+  record, play  -> playing
+  stop          -> stopped
+  clear         -> empty
+  elapsed       -> stay
 
 playing:
-  record                -> overdubbing
-  stop                  -> stopped
-  clear                 -> empty
-  play, elapsed         -> stay
+  record         -> overdubbing
+  stop           -> stopped
+  clear          -> empty
+  play, elapsed  -> stay
 
 overdubbing:
-  record, play          -> playing
-  stop                  -> stopped
-  clear                 -> empty
-  elapsed               -> stay
+  record, play  -> playing
+  stop          -> stopped
+  clear         -> empty
+  elapsed       -> stay
 
 stopped:
-  play                  -> playing
-  clear                 -> empty
-  record                -> refuse overdub-in-play
-  stop, elapsed         -> stay
+  play           -> playing
+  clear          -> empty
+  record         -> refuse overdub-in-play
+  stop, elapsed  -> stay

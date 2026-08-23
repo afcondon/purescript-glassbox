@@ -1,3 +1,14 @@
+# The acceptance test for phase 1 of docs/kb/plans/the-same-machine.md:
+# a machine that exists ONLY as this file. No PureScript was written for it,
+# no constructor names it, nothing was recompiled to add it. If that ever
+# stops being true, the thesis has failed.
+#
+# It also exercises the three things a general FSM format tends to lack:
+# config that RESHAPES the machine (turn off the CD slot and the cd state
+# becomes unreachable, and the diagram changes to say so), a state that
+# resolves by itself (seeking gives up after a while with no user event),
+# and refusals that carry a reason rather than doing nothing silently.
+
 machine  car-radio  "Car radio"
 format   1
 initial  off
@@ -35,30 +46,30 @@ off:
   source, seek, cancel, eject, giveup  -> stay
 
 radio:
-  power                                                               -> off
-  seek                                                                -> seeking
-  source                               | has-cd-slot and disc-loaded  -> cd
-                                       | not has-cd-slot              -> refuse not-fitted
-                                       | not disc-loaded              -> refuse no-disc
-                                       | otherwise                    -> stay
-  cancel, giveup                                                      -> stay
-  eject                                                               -> refuse no-disc
+  power                                             -> off
+  seek                                              -> seeking
+  source          when has-cd-slot and disc-loaded  -> cd
+                  elif not has-cd-slot              -> refuse not-fitted
+                  elif not disc-loaded              -> refuse no-disc
+                  else                              -> stay
+  cancel, giveup                                    -> stay
+  eject                                             -> refuse no-disc
 
 seeking:  after seek-seconds fires giveup
-  giveup, cancel                       -> radio
-  seek, source                         -> stay
-  power                                -> off
-  eject                                -> refuse no-disc
+  giveup, cancel  -> radio
+  seek, source    -> stay
+  power           -> off
+  eject           -> refuse no-disc
 
 cd:
-  power                                                    -> off
-  eject                                                    -> radio
-  source                               | bluetooth-paired  -> bluetooth
-                                       | otherwise         -> refuse no-phone
-  seek, cancel, giveup                                     -> stay
+  power                                        -> off
+  eject                                        -> radio
+  source                when bluetooth-paired  -> bluetooth
+                        else                   -> refuse no-phone
+  seek, cancel, giveup                         -> stay
 
 bluetooth:
-  power                                -> off
-  source                               -> radio
-  eject                                -> refuse no-disc
-  seek, cancel, giveup                 -> stay
+  power                 -> off
+  source                -> radio
+  eject                 -> refuse no-disc
+  seek, cancel, giveup  -> stay

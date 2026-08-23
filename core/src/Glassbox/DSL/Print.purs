@@ -22,9 +22,6 @@
 -- |   * `Blocks` — grouped by state, events sharing an outcome listed together,
 -- |     guards as an aligned alternation. The bet is that a reader's question is
 -- |     usually *"what can I do from here?"*, which is a question about a state.
--- |   * `Rules` — one transition per line, flat, state-diagram order. The bet is
--- |     on grep and on diffs: every fact is on exactly one line, and a change to
--- |     one transition touches one line.
 -- |   * `Table` — a state × event grid, with the 8% of guarded rules escaping to
 -- |     footnotes. The bet is that the 92% belongs in a cell, and that a grid
 -- |     makes a *missing* pair visible in a way a list never can — which matters
@@ -43,7 +40,6 @@
 -- |     the corpus does, but the format permits — it is printed `config:x` /
 -- |     `fact:x`. Short in the common case, exact when it has to be.
 -- |   * A rule naming a state or event that is not declared cannot sit on the
--- |     `Table` grid, and a state with no rules at all cannot be seen in `Rules`.
 -- |     Both are printed under loud headings rather than quietly lost.
 -- |
 -- | `!!` marks something the printer thinks is wrong with the artifact rather
@@ -90,23 +86,21 @@ import Glassbox.Spec
 -- The choice
 -- =============================================================================
 
-data Syntax = Blocks | Rules | Table
+data Syntax = Blocks | Table
 
 derive instance eqSyntax :: Eq Syntax
 
 syntaxName :: Syntax -> String
 syntaxName = case _ of
   Blocks -> "blocks"
-  Rules -> "rules"
   Table -> "table"
 
 allSyntaxes :: Array Syntax
-allSyntaxes = [ Blocks, Rules, Table ]
+allSyntaxes = [ Blocks, Table ]
 
 print :: Syntax -> Spec -> String
 print syntax spec = case syntax of
   Blocks -> printBlocks spec
-  Rules -> printRules spec
   Table -> printTable spec
 
 -- | Every machine in every syntax, keyed by the filename it should be written
@@ -279,7 +273,7 @@ outcomeArrow = case _ of
   Stay -> "-> stay"
   Refuse rid -> "-> refuse " <> rawRefusal rid
 
--- | `Rules` puts the outcome last with no arrow on the boring kinds, so a real
+-- | The flat form put the outcome last with no arrow on the boring kinds, so a real
 -- | move is the only thing on the page with an arrow in front of it.
 outcomeFlat :: Outcome -> String
 outcomeFlat = case _ of
@@ -362,9 +356,17 @@ groupRules = foldl add []
     Nothing -> snoc acc { events: [ rule.on ], cases: rule.cases }
 
 printBlocks :: Spec -> String
-printBlocks spec = finish (preamble <> declarations <> body)
+printBlocks spec = finish (notesLines <> preamble <> declarations <> body)
   where
   amb = ambiguousIn spec
+
+  -- Prose first, because it is what the author wrote first and what a reader
+  -- coming to a machine cold needs before any of the declarations mean
+  -- anything. `#` to the end of the line; it round-trips because `notes` is a
+  -- field of `Spec` rather than something the codec discards.
+  notesLines = case spec.notes of
+    [] -> []
+    ns -> map (\n -> if n == "" then "#" else "# " <> n) ns <> [ "" ]
 
   preamble = layout ""
     [ Cells [ "machine", spec.id, quote spec.title ]
@@ -394,16 +396,14 @@ printBlocks spec = finish (preamble <> declarations <> body)
 
   blockStates = map _.id spec.states <> undeclaredStates spec
 
-  -- The event column is global — the left edge of every block starts in the
-  -- same place — but the guard column is per block. Only 18 of the corpus's 229
-  -- rules have a guard at all, so a global guard column would charge every one
-  -- of the other 211 lines a gutter wide enough for the worst guard in the file.
-  -- Blocks are separated by blank lines, so the eye resets at each one anyway.
+  -- Both columns are per block, and that is a deliberate trade against looks.
+  -- A global event column aligns the whole file and reads better, but it means
+  -- the widest event list anywhere sets the gutter everywhere, so renaming one
+  -- event repads every block and a one-word change becomes a whole-file diff.
+  -- Per block caps the blast radius of any edit at the state it touches, which
+  -- matters more for a format that lives in git and is edited by hand. The eye
+  -- resets at each blank line anyway.
   body = concat (map block blockStates)
-
-  eventColumn = fromMaybe 0 (maximum (map (\g -> String.length (eventsOf g)) allGroups))
-
-  allGroups = concat (map (\sid -> groupRules (rulesFrom spec sid)) blockStates)
 
   eventsOf g = joinWith ", " (map rawEvent g.events)
 
@@ -424,11 +424,18 @@ printBlocks spec = finish (preamble <> declarations <> body)
 
   bodyFor sid = case rulesFrom spec sid of
     [] -> [ Cells [ "!! no rules — every event here silently stays" ] ]
-    rules -> concat (map groupLines (groupRules rules))
+    rules -> concat (map (groupLines (columnFor sid)) (groupRules rules))
 
-  groupLines group =
+  columnFor sid =
+    fromMaybe 0 (maximum (map (\g -> String.length (eventsOf g)) (groupRules (rulesFrom spec sid))))
+
+  -- `when` / `elif` / `else` rather than a bare `|`, because in an ordered
+  -- alternation the ORDER is load-bearing and nothing else on the page says so.
+  -- An `elif` with no `when` above it is a mistake a parser can catch; two
+  -- unmarked guards swapped by a careless merge are silent.
+  groupLines column group =
     let
-      evText = pad eventColumn (eventsOf group)
+      evText = pad column (eventsOf group)
     in
       case group.cases of
         [] -> [ Cells [ evText, "", "!! no cases" ] ]
@@ -436,7 +443,9 @@ printBlocks spec = finish (preamble <> declarations <> body)
         cs -> mapWithIndex
           ( \i c -> Cells
               [ if i == 0 then evText else ""
-              , "| " <> maybe "otherwise" (guardText amb) c.when
+              , case c.when of
+                  Nothing -> "else"
+                  Just g -> (if i == 0 then "when " else "elif ") <> guardText amb g
               , outcomeArrow c.outcome
               ]
           )
@@ -445,66 +454,6 @@ printBlocks spec = finish (preamble <> declarations <> body)
 -- =============================================================================
 -- Syntax 2 — Rules
 -- =============================================================================
-
-printRules :: Spec -> String
-printRules spec = finish (preamble <> [ "" ] <> declarations <> [ "" ] <> transitions <> orphans)
-  where
-  amb = ambiguousIn spec
-
-  preamble = layout ""
-    [ Cells [ "format", show spec.version ]
-    , Cells [ "machine", spec.id ]
-    , Cells [ "title", quote spec.title ]
-    , Cells [ "initial", rawState spec.initial ]
-    ]
-
-  -- Every declaration is one line beginning with its keyword, so `grep ^event`
-  -- is a complete answer and no reader has to know where a section started.
-  declarations = layout "" (map Cells (concat
-    [ map stateRow spec.states
-    , map eventRow spec.events
-    , map configRow spec.config
-    , map factRow spec.facts
-    , map refusalRow spec.refusals
-    , map deadlineRow spec.deadlines
-    ]))
-
-  stateRow s =
-    [ "state", rawState s.id, if s.final then "final" else "", labelPart (rawState s.id) s.label ]
-  eventRow e = [ "event", rawEvent e.id, sourceText e.source, labelPart (rawEvent e.id) e.label ]
-  configRow c = [ "config", rawConfig c.id, "= " <> literalText c.default, labelPart (rawConfig c.id) c.label ]
-  factRow f = [ "fact", rawFact f.id, "", labelPart (rawFact f.id) f.label ]
-  refusalRow r = [ "refusal", rawRefusal r.id, "", quote r.text ]
-  deadlineRow d = [ "deadline", rawState d.inState, "", deadlineText amb d ]
-
-  transitions = layout "" (map Cells (concat (map ruleLines spec.rules)))
-
-  -- `when` / `elif` / `else` rather than bare guards, because in a flat file
-  -- the ORDER of two adjacent lines is load-bearing and nothing else on the page
-  -- says so. An `elif` with no `when` above it on the same pair is a mistake a
-  -- parser could catch; two unmarked guards reordered by a careless merge are
-  -- not.
-  ruleLines rule = case rule.cases of
-    [] -> [ [ rawState rule.from, rawEvent rule.on, "", "!! no cases" ] ]
-    cs -> mapWithIndex (line (length cs)) cs
-    where
-    line total i c =
-      [ rawState rule.from
-      , rawEvent rule.on
-      , keyword total i c
-      , outcomeFlat c.outcome
-      ]
-
-    keyword total i c = case c.when of
-      Just g -> (if i == 0 then "when " else "elif ") <> guardText amb g
-      Nothing -> if total == 1 then "" else "else"
-
-  -- A flat list of transitions cannot mention a state that has none, so a state
-  -- that is a dead end — or a typo — would simply be absent. Say so instead.
-  orphans = case filter (\s -> null (rulesFrom spec s.id)) spec.states of
-    [] -> []
-    silent -> [ "", "!! states with no rules at all (every event silently stays)" ]
-      <> layout "  " (map (\s -> Cells [ rawState s.id ]) silent)
 
 -- =============================================================================
 -- Syntax 3 — Table
