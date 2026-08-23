@@ -25,7 +25,7 @@ import Glassbox.Edges (EdgeKind(..), defaultOptions, edgesOf)
 import Glassbox.Export.StateDiagram (toStateDiagram)
 import Glassbox.Run (worldFrom)
 import Glassbox.Spec (EventSource(..), Expr(..), Spec, Value(..))
-import Test.Fixture (always, blank, edge, eid, refusal, refuse, sid, to)
+import Test.Fixture (always, blank, edge, eid, finalSt, refusal, refuse, sid, st, to)
 import Test.Harness (check, section)
 
 -- | Labels chosen to be awkward: two of them carry the notation's one
@@ -35,9 +35,9 @@ awkward = blank
   { id = "awkward"
   , initial = sid "off"
   , states =
-      [ { id: sid "off", label: "Off: standby", final: false }
-      , { id: sid "seeking", label: "Seeking", final: false }
-      , { id: sid "locked", label: "Locked", final: true }
+      [ (st "off") { label = "Off: standby" }
+      , (st "seeking") { label = "Seeking" }
+      , (finalSt "locked") { label = "Locked" }
       ]
   , events =
       [ { id: eid "power", label: "power", source: FromUser }

@@ -23,6 +23,7 @@ import Glassbox.Spec
   , Outcome(..)
   , Spec
   , StateId
+  , commandIds
   , eventIds
   , stateIds
   )
@@ -64,8 +65,16 @@ roundTripsMachine name spec = do
             && length spec.facts == length back.facts
             && length spec.refusals == length back.refusals
             && length spec.deadlines == length back.deadlines
+            && commandIds spec == commandIds back
         )
-      pure [ a, b, c, d ]
+      -- Separately from the declarations, because the commands a state runs are
+      -- written on the block and folded back onto the declaration, and an
+      -- ORDERED comparison is the only one that would notice a reversal.
+      e <- check (name <> ": what each state does on the way in and out survives")
+        (map hooks spec.states == map hooks back.states)
+      pure [ a, b, c, d, e ]
+  where
+  hooks s = Tuple s.entry s.exit
 
 crossProduct :: Spec -> Array (Tuple StateId EventId)
 crossProduct spec = do

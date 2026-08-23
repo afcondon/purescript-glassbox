@@ -344,7 +344,13 @@ stepUnits = do
   let Tuple moved rec1 = step ordered flagged (sid "a") (eid "go")
   a <- check "a move carries the machine and records where it came from"
     ( moved == StateId "b"
-        && rec1 == { from: StateId "a", event: EventId "go", outcome: Move (StateId "b"), current: StateId "b" }
+        && rec1 ==
+          { from: StateId "a"
+          , event: EventId "go"
+          , outcome: Move (StateId "b")
+          , current: StateId "b"
+          , commands: []
+          }
     )
 
   let Tuple stayed rec2 = step ordered base (sid "b") (eid "go")
@@ -357,7 +363,13 @@ stepUnits = do
 
   d <- check "initialStep sits at the initial state having done nothing"
     ( initialStep ordered (eid "go")
-        == { from: StateId "a", event: EventId "go", outcome: Stay, current: StateId "a" }
+        ==
+          { from: StateId "a"
+          , event: EventId "go"
+          , outcome: Stay
+          , current: StateId "a"
+          , commands: []
+          }
     )
 
   let timed = ordered

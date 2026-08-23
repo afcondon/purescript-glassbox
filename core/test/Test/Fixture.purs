@@ -15,6 +15,9 @@ module Test.Fixture
   , cfg
   , fact
   , refusal
+  , command
+  , doing
+  , cid
   , to
   , stay
   , refuse
@@ -36,6 +39,8 @@ import Glassbox.Edges (Edge, EdgeKind)
 import Glassbox.Run (World)
 import Glassbox.Spec
   ( Case
+  , CommandDecl
+  , CommandId(..)
   , ConfigDecl
   , ConfigId(..)
   , EventDecl
@@ -67,6 +72,7 @@ blank =
   , config: []
   , facts: []
   , refusals: []
+  , commands: []
   , rules: []
   , deadlines: []
   }
@@ -78,10 +84,23 @@ eid :: String -> EventId
 eid = EventId
 
 st :: String -> StateDecl
-st raw = { id: StateId raw, label: raw, final: false }
+st raw = { id: StateId raw, label: raw, final: false, entry: [], exit: [] }
 
 finalSt :: String -> StateDecl
-finalSt raw = { id: StateId raw, label: raw, final: true }
+finalSt raw = { id: StateId raw, label: raw, final: true, entry: [], exit: [] }
+
+-- | A state that tells the host to do something on the way in and on the way
+-- | out. The two arrays are separate arguments rather than a record update so
+-- | that a command fixture reads in the order the commands actually run.
+doing :: String -> Array String -> Array String -> StateDecl
+doing raw entry exit =
+  (st raw) { entry = map CommandId entry, exit = map CommandId exit }
+
+command :: String -> CommandDecl
+command raw = { id: CommandId raw, label: raw }
+
+cid :: String -> CommandId
+cid = CommandId
 
 ev :: String -> EventDecl
 ev raw = { id: EventId raw, label: raw, source: FromUser }

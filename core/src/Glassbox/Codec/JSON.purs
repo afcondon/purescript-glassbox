@@ -15,15 +15,17 @@
 -- | ### Shape
 -- |
 -- | ```json
--- | { "glassbox": 1
+-- | { "glassbox": 2
 -- | , "id": "car-radio"
 -- | , "title": "Car radio"
 -- | , "initial": "off"
--- | , "states":  [ { "id": "off", "label": "Off" } ]
+-- | , "states":  [ { "id": "off", "label": "Off" }
+-- |              , { "id": "cd", "label": "CD", "entry": ["spin-up"], "exit": ["park"] } ]
 -- | , "events":  [ { "id": "power", "label": "power", "source": "user" } ]
 -- | , "config":  [ { "id": "band-count", "label": "Bands", "default": 2 } ]
 -- | , "facts":   [ { "id": "disc-present", "label": "A disc is loaded" } ]
 -- | , "refusals":[ { "id": "no-disc", "text": "there is no disc to play" } ]
+-- | , "commands":[ { "id": "spin-up", "label": "Spin the disc up" } ]
 -- | , "rules":   [ { "from": "off", "on": "power", "cases": [ { "to": "radio" } ] } ]
 -- | , "deadlines": [ { "in": "seeking", "fires": "locked", "after": 3 } ]
 -- | }
@@ -33,6 +35,14 @@
 -- | omitted meaning the catch-all. A guard is one of `{"fact":…}`,
 -- | `{"config":…}`, a literal, `{"not":…}`, `{"all":[…]}`, `{"any":[…]}`, or a
 -- | comparison `{"op":"gt","left":…,"right":…}`.
+-- |
+-- | ### The version field is computed, not copied
+-- |
+-- | `glassbox` is written as `Glassbox.Spec.versionFor` and read back the same
+-- | way, so an artifact always declares the oldest version that can express it.
+-- | A file using no commands stays at 1 however new the writer is, and a file
+-- | that understates itself is corrected on read rather than refused. A version
+-- | *above* this build is still refused outright.
 module Glassbox.Codec.JSON
   ( specCodec
   , decodeSpec
@@ -57,6 +67,8 @@ import Foreign.Object as Object
 import Glassbox.Spec
   ( Case
   , CmpOp(..)
+  , CommandDecl
+  , CommandId(..)
   , ConfigDecl
   , ConfigId(..)
   , Deadline
@@ -76,6 +88,7 @@ import Glassbox.Spec
   , StateId(..)
   , Value(..)
   , formatVersion
+  , versionFor
   )
 
 -- =============================================================================
@@ -125,6 +138,9 @@ configIdCodec = CA.prismaticCodec "ConfigId" (Just <<< ConfigId) (\(ConfigId s) 
 
 factIdCodec :: CA.JsonCodec FactId
 factIdCodec = CA.prismaticCodec "FactId" (Just <<< FactId) (\(FactId s) -> s) CA.string
+
+commandIdCodec :: CA.JsonCodec CommandId
+commandIdCodec = CA.prismaticCodec "CommandId" (Just <<< CommandId) (\(CommandId s) -> s) CA.string
 
 -- | A value is written as its bare JSON self — `4`, `true`, `"fm"` — because an
 -- | artifact is meant to be legible and hand-editable, and `{"number":4}` is
@@ -292,13 +308,25 @@ stateDeclCodec = Codec.codec' decode encode
   encode s = obj
     ( [ Tuple "id" (Codec.encode stateIdCodec s.id)
       , Tuple "label" (J.fromString s.label)
-      ] <> if s.final then [ Tuple "final" (J.fromBoolean true) ] else []
+      ]
+        <> (if s.final then [ Tuple "final" (J.fromBoolean true) ] else [])
+        <> commandsField "entry" s.entry
+        <> commandsField "exit" s.exit
     )
   decode json = do
     o <- note (CA.TypeMismatch "a state object") (J.toObject json)
     raw <- requiredString o "id"
     let label = fromMaybe raw (stringAt o "label")
-    pure { id: StateId raw, label, final: boolAt o "final" }
+    entry <- lmap (CA.AtKey "entry") (listAt o "entry" commandIdCodec)
+    exit <- lmap (CA.AtKey "exit") (listAt o "exit" commandIdCodec)
+    pure { id: StateId raw, label, final: boolAt o "final", entry, exit }
+
+-- | Omitted when empty, so a state that does nothing on the way in or out reads
+-- | exactly as it did before commands existed.
+commandsField :: String -> Array CommandId -> Array (Tuple String Json)
+commandsField key = case _ of
+  [] -> []
+  cs -> [ Tuple key (J.fromArray (map (Codec.encode commandIdCodec) cs)) ]
 
 eventDeclCodec :: CA.JsonCodec EventDecl
 eventDeclCodec = Codec.codec' decode encode
@@ -356,6 +384,18 @@ refusalDeclCodec = Codec.codec' decode encode
     raw <- requiredString o "id"
     pure { id: RefusalId raw, text: fromMaybe raw (stringAt o "text") }
 
+commandDeclCodec :: CA.JsonCodec CommandDecl
+commandDeclCodec = Codec.codec' decode encode
+  where
+  encode c = obj
+    [ Tuple "id" (Codec.encode commandIdCodec c.id)
+    , Tuple "label" (J.fromString c.label)
+    ]
+  decode json = do
+    o <- note (CA.TypeMismatch "a command object") (J.toObject json)
+    raw <- requiredString o "id"
+    pure { id: CommandId raw, label: fromMaybe raw (stringAt o "label") }
+
 -- =============================================================================
 -- The whole artifact
 -- =============================================================================
@@ -364,7 +404,7 @@ specCodec :: CA.JsonCodec Spec
 specCodec = Codec.codec' decode encode
   where
   encode s = obj $
-    [ Tuple "glassbox" (Codec.encode CA.int s.version)
+    [ Tuple "glassbox" (Codec.encode CA.int (versionFor s))
     , Tuple "id" (J.fromString s.id)
     , Tuple "title" (J.fromString s.title)
     ] <> notesField s.notes <>
@@ -374,6 +414,7 @@ specCodec = Codec.codec' decode encode
     , Tuple "config" (J.fromArray (map (Codec.encode configDeclCodec) s.config))
     , Tuple "facts" (J.fromArray (map (Codec.encode factDeclCodec) s.facts))
     , Tuple "refusals" (J.fromArray (map (Codec.encode refusalDeclCodec) s.refusals))
+    , Tuple "commands" (J.fromArray (map (Codec.encode commandDeclCodec) s.commands))
     , Tuple "rules" (J.fromArray (map (Codec.encode ruleCodec) s.rules))
     , Tuple "deadlines" (J.fromArray (map (Codec.encode deadlineCodec) s.deadlines))
     ]
@@ -394,9 +435,14 @@ specCodec = Codec.codec' decode encode
     config <- listAt o "config" configDeclCodec
     facts <- listAt o "facts" factDeclCodec
     refusals <- listAt o "refusals" refusalDeclCodec
+    commands <- listAt o "commands" commandDeclCodec
     rules <- listAt o "rules" ruleCodec
     deadlines <- listAt o "deadlines" deadlineCodec
-    pure
+    -- Normalised upward, never downward. A file that says 1 and carries a
+    -- command was understating itself; a file that says 0 or -3 — which the
+    -- format has always accepted — is now read as the 1 it actually is,
+    -- instead of keeping a number no reader could act on.
+    pure (normalise
       { version
       , id
       , notes
@@ -407,9 +453,13 @@ specCodec = Codec.codec' decode encode
       , config
       , facts
       , refusals
+      , commands
       , rules
       , deadlines
-      }
+      })
+
+normalise :: Spec -> Spec
+normalise spec = spec { version = versionFor spec }
 
 -- =============================================================================
 -- Helpers

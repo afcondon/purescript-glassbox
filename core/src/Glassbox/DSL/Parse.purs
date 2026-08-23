@@ -27,7 +27,8 @@
 -- | resolved against the declarations, which is why the block body is parsed
 -- | with the declarations already in hand rather than in a separate sweep. A
 -- | name declared as both is printed qualified and parsed qualified; a name
--- | declared as neither is a parse error rather than a guess.
+-- | declared as neither is a parse error rather than a guess. An `entry` or
+-- | `exit` line naming an undeclared command is refused on the same principle.
 module Glassbox.DSL.Parse
   ( parseBlocks
   , parseBlocksWith
@@ -51,6 +52,8 @@ import Data.Tuple (Tuple(..))
 import Glassbox.Spec
   ( Case
   , CmpOp(..)
+  , CommandDecl
+  , CommandId(..)
   , ConfigDecl
   , ConfigId(..)
   , Deadline
@@ -175,10 +178,11 @@ type Decls =
   , config :: Array ConfigDecl
   , facts :: Array FactDecl
   , refusals :: Array RefusalDecl
+  , commands :: Array CommandDecl
   }
 
 emptyDecls :: Decls
-emptyDecls = { states: [], events: [], config: [], facts: [], refusals: [] }
+emptyDecls = { states: [], events: [], config: [], facts: [], refusals: [], commands: [] }
 
 document :: Parser String Spec
 document = do
@@ -198,19 +202,32 @@ document = do
     , notes
     , title: fromMaybe id title
     , initial
-    , states: map (markFinal blocks) decls.states
+    , states: map (fromBlocks blocks) decls.states
     , events: decls.events
     , config: decls.config
     , facts: decls.facts
     , refusals: decls.refusals
+    , commands: decls.commands
     , rules: concat (map _.rules blocks)
     , deadlines: concat (map _.deadlines blocks)
     }
 
--- | Fold each block's `final` back onto the declaration it names.
-markFinal :: Array Block -> StateDecl -> StateDecl
-markFinal blocks decl =
-  decl { final = decl.final || any (\b -> b.from == decl.id && b.final) blocks }
+-- | Fold what a block says about its own state back onto the declaration.
+-- |
+-- | `final`, `entry` and `exit` are all written on the block rather than in the
+-- | `states` section, so that a reader learns everything about a state where
+-- | they are already looking and the two places can never contradict each
+-- | other. The cost is this fold. Commands from several blocks naming the same
+-- | state accumulate in block order, which is the only reading that does not
+-- | silently discard one of them.
+fromBlocks :: Array Block -> StateDecl -> StateDecl
+fromBlocks blocks decl = decl
+  { final = decl.final || any (\b -> b.from == decl.id && b.final) blocks
+  , entry = decl.entry <> concat (map _.entry (mine))
+  , exit = decl.exit <> concat (map _.exit (mine))
+  }
+  where
+  mine = Array.filter (\b -> b.from == decl.id) blocks
 
 -- | `#` to the end of the line. One space after the hash is the printer's
 -- | doing, so it comes back off; anything further in is the author's.
@@ -262,6 +279,7 @@ declarationSections = foldl merge emptyDecls <$> many section
       <|> (sectionOf "config" configRow <#> \xs -> emptyDecls { config = xs })
       <|> (sectionOf "facts" factRow <#> \xs -> emptyDecls { facts = xs })
       <|> (sectionOf "refusals" refusalRow <#> \xs -> emptyDecls { refusals = xs })
+      <|> (sectionOf "commands" commandRow <#> \xs -> emptyDecls { commands = xs })
 
   merge acc d = acc
     { states = acc.states <> d.states
@@ -269,6 +287,7 @@ declarationSections = foldl merge emptyDecls <$> many section
     , config = acc.config <> d.config
     , facts = acc.facts <> d.facts
     , refusals = acc.refusals <> d.refusals
+    , commands = acc.commands <> d.commands
     }
 
 sectionOf :: forall a. String -> Parser String a -> Parser String (Array a)
@@ -289,11 +308,13 @@ indented p = do
   pure a
 
 -- | A label equal to the id prints as nothing, so an absent label means the id.
+-- | `final`, `entry` and `exit` are absent here on purpose: they are written on
+-- | the state's own block and folded back on by `fromBlocks`.
 stateRow :: Parser String StateDecl
 stateRow = do
   id <- ident
   label <- optionMaybe quoted
-  pure { id: StateId id, label: fromMaybe id label, final: false }
+  pure { id: StateId id, label: fromMaybe id label, final: false, entry: [], exit: [] }
 
 eventRow :: Parser String EventDecl
 eventRow = do
@@ -322,6 +343,12 @@ refusalRow = do
   text <- optionMaybe quoted
   pure { id: RefusalId id, text: fromMaybe id text }
 
+commandRow :: Parser String CommandDecl
+commandRow = do
+  id <- ident
+  label <- optionMaybe quoted
+  pure { id: CommandId id, label: fromMaybe id label }
+
 -- =============================================================================
 -- State blocks
 -- =============================================================================
@@ -333,41 +360,90 @@ refusalRow = do
 type Block =
   { from :: StateId
   , final :: Boolean
+  , entry :: Array CommandId
+  , exit :: Array CommandId
   , rules :: Array Rule
   , deadlines :: Array Deadline
   }
+
+-- | One line inside a block. Four shapes, and the fourth is a line the printer
+-- | wrote to complain about the artifact, which is read back as nothing at all.
+data BodyLine
+  = ARule Group
+  | AnEntry (Array CommandId)
+  | AnExit (Array CommandId)
+  | Ignored
 
 stateBlock :: Decls -> Parser String Block
 stateBlock decls = do
   blanks
   hspace
-  from <- identBut [ "states", "events", "config", "facts", "refusals" ]
+  from <- identBut [ "states", "events", "config", "facts", "refusals", "commands" ]
   void (char ':')
   hspace
   mods <- blockModifiers decls
   eol
-  groups <- Array.catMaybes <$> many bodyLine
+  lines <- many bodyLine
   blanks
   pure
     { from: StateId from
     , final: mods.final
-    , rules: concat (map (toRules (StateId from)) groups)
+    , entry: concat (Array.mapMaybe entryOfLine lines)
+    , exit: concat (Array.mapMaybe exitOfLine lines)
+    , rules: concat (map (toRules (StateId from)) (Array.mapMaybe groupOfLine lines))
     , deadlines: map (\d -> d { inState = StateId from }) mods.deadlines
     }
   where
   toRules from group = map (\e -> { from, on: e, cases: group.cases }) group.events
 
+  groupOfLine = case _ of
+    ARule g -> Just g
+    _ -> Nothing
+
+  entryOfLine = case _ of
+    AnEntry cs -> Just cs
+    _ -> Nothing
+
+  exitOfLine = case _ of
+    AnExit cs -> Just cs
+    _ -> Nothing
+
   -- The printer emits `!! …` inside a block for things the format tolerates
   -- but should not — a state with no rules, a group with no cases. Reading
   -- them back as nothing is what stops a round trip destroying the artifact
   -- the marker was warning about.
-  bodyLine = (Just <$> try (groupLine decls)) <|> (Nothing <$ try bodyMarker)
+  bodyLine =
+    (AnEntry <$> try (hookLine "entry"))
+      <|> (AnExit <$> try (hookLine "exit"))
+      <|> (ARule <$> try (groupLine decls))
+      <|> (Ignored <$ try bodyMarker)
+
+  -- `entry` and `exit` name commands, which are declared, so an undeclared name
+  -- here is refused rather than invented — the same rule a bare name in a guard
+  -- obeys, and for the same reason.
+  hookLine word = do
+    void (some (oneOf [ ' ', '\t' ]))
+    keyword word
+    cs <- commandList decls
+    eol
+    pure cs
 
   bodyMarker = do
     void (some (oneOf [ ' ', '\t' ]))
     void (string "!!")
     void restOfLine
     eol
+
+commandList :: Decls -> Parser String (Array CommandId)
+commandList decls = do
+  first <- name
+  rest <- many (try (symbol "," *> name))
+  pure ([ first ] <> rest)
+  where
+  name = do
+    n <- ident
+    if isJust (Array.find (\c -> c.id == CommandId n) decls.commands) then pure (CommandId n)
+    else fail (n <> " is not a declared command")
 
 type Modifiers =
   { final :: Boolean
@@ -426,7 +502,10 @@ eventList = do
   rest <- many (try (symbol "," *> name))
   pure (map EventId ([ first ] <> rest))
   where
-  name = identBut [ "when", "elif", "else" ]
+  -- `entry` and `exit` open a command line, so they cannot also open an event
+  -- list. The cost is two event names; the alternative is a line whose meaning
+  -- depends on whether a command of that name happens to be declared.
+  name = identBut [ "when", "elif", "else", "entry", "exit" ]
 
 singleOutcome :: Parser String Outcome
 singleOutcome = do

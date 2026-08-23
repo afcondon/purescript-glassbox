@@ -33,7 +33,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Glassbox.Codec.JSON (decodeSpec, encodeSpec, parseSpec, printSpec)
 import Glassbox.Edges (Edge, EdgeKind(..), defaultOptions, edgesOf, merge)
-import Glassbox.Run (World, evalGuard, lookupConfig, resolve, worldFrom)
+import Glassbox.Run (World, commandsFor, evalGuard, lookupConfig, resolve, worldFrom)
 import Glassbox.Spec
   ( EventId(..)
   , EventSource(..)
@@ -158,6 +158,9 @@ generatorCoversTheFormat = do
     , reaches "a runtime-sourced event" (any (\e -> e.source /= userSource) <<< _.events)
     , reaches "a (state, event) pair with no rule" pairWithNoRule
     , reaches "a rule with no cases" (any (null <<< _.cases) <<< _.rules)
+    , reaches "a declared command" (not <<< null <<< _.commands)
+    , reaches "a state that does something on entry" (any (not <<< null <<< _.entry) <<< _.states)
+    , reaches "a state that does something on exit" (any (not <<< null <<< _.exit) <<< _.states)
     ]
 
   userSource = FromUser
@@ -282,6 +285,53 @@ hidingRefusalsRemovesOnlyRefusals = do
     )
 
 -- =============================================================================
+-- Commands
+-- =============================================================================
+
+-- | A refused or ignored event never asks the host to do anything.
+-- |
+-- | Stated over generated machines rather than by example because it is the
+-- | rule most likely to be broken by accident later: the tempting place to hang
+-- | an effect is wherever the code already branches, and two of those three
+-- | branches must stay silent.
+nothingHappensWithoutAMove :: Gen Result
+nothingHappensWithoutAMove = do
+  spec <- genSpec
+  world <- genWorldFor spec
+  let
+    noisy = filter
+      ( \(Tuple s e) -> case resolve spec world s e of
+          Move _ -> false
+          _ -> not (null (commandsFor spec s (resolve spec world s e)))
+      )
+      (crossProduct spec)
+  pure (holds "a Stay or a Refuse emitted a command" (null noisy))
+
+-- | What the host is asked to do depends on where the machine was and where it
+-- | went — and on nothing else. Two different events landing the same way must
+-- | ask for exactly the same thing, which is the property that makes "say it
+-- | once on the state" equivalent to "say it on every inbound edge".
+commandsDependOnlyOnThePair :: Gen Result
+commandsDependOnlyOnThePair = do
+  spec <- genSpec
+  world <- genWorldFor spec
+  let
+    disagreeing = filter
+      ( \(Tuple (Tuple s e1) e2) ->
+          resolve spec world s e1 == resolve spec world s e2
+            && commandsFor spec s (resolve spec world s e1)
+            /= commandsFor spec s (resolve spec world s e2)
+      )
+      (pairsOfEvents spec)
+  pure (holds "two events with the same outcome asked for different commands" (null disagreeing))
+  where
+  pairsOfEvents spec = do
+    s <- stateIds spec
+    e1 <- eventIds spec
+    e2 <- eventIds spec
+    pure (Tuple (Tuple s e1) e2)
+
+-- =============================================================================
 -- evalGuard
 -- =============================================================================
 
@@ -386,4 +436,7 @@ properties = do
 
   q <- prop "worldFrom is the declared defaults and no facts" defaultWorldIsTheDeclaredDefaults
 
-  pure [ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q ]
+  r <- prop "only a Move ever asks the host to do anything" nothingHappensWithoutAMove
+  s <- prop "the commands depend on the (state, outcome) pair and nothing else" commandsDependOnlyOnThePair
+
+  pure [ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s ]

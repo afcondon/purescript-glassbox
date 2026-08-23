@@ -16,6 +16,7 @@
 -- | translation of that into `DataViz.Layout.StateMachine`'s vocabulary.
 module Glassbox.Draw
   ( EdgeExtra
+  , StateExtra
   , describe
   , annotate
   , edgePairs
@@ -31,7 +32,7 @@ import Data.String (joinWith)
 import Data.Tuple (Tuple(..))
 import DataViz.Layout.StateMachine (StateMachine)
 import Glassbox.Edges (Edge, EdgeKind)
-import Glassbox.Spec (Spec, StateId(..), labelOfEvent, textOfRefusal)
+import Glassbox.Spec (CommandId(..), Spec, StateId(..), labelOfEvent, textOfRefusal)
 
 -- | What rides along on a drawn transition.
 -- |
@@ -45,11 +46,28 @@ type EdgeExtra =
   , role :: Maybe EdgeClass
   }
 
+-- | What rides along on a drawn state.
+-- |
+-- | The commands. They belong on the node and not on the arrows, and that is
+-- | the whole visual argument of the effects fork: a reader looking at
+-- | Recording sees that entering it starts the recorder, once, instead of
+-- | reading it off four arrows and wondering about the fifth.
+-- |
+-- | Carried as **ids**, which is the opposite of what happens to an event on an
+-- | edge, and deliberately. An event's id is its long name and its label the
+-- | short one; a command's id is the terse `start-recorder` and its label a
+-- | whole sentence for a person. A caption under a node wants the terse form,
+-- | and anything wanting the sentence has the `Spec` and can ask.
+type StateExtra =
+  { entry :: Array String
+  , exit :: Array String
+  }
+
 -- | Turn a machine and its edge set into something the layout can lay out.
 -- |
 -- | Labels are resolved here and not before, because which of an event's names
 -- | to show is a question for whoever is showing it.
-describe :: Spec -> Array Edge -> StateMachine Unit EdgeExtra
+describe :: Spec -> Array Edge -> StateMachine StateExtra EdgeExtra
 describe spec edges =
   { states: map toState spec.states
   , transitions: map toTransition edges
@@ -57,12 +75,17 @@ describe spec edges =
   where
   raw (StateId s) = s
 
+  rawCommand (CommandId c) = c
+
   toState decl =
     { id: raw decl.id
     , label: decl.label
     , isInitial: decl.id == spec.initial
     , isFinal: decl.final
-    , extra: unit
+    , extra:
+        { entry: map rawCommand decl.entry
+        , exit: map rawCommand decl.exit
+        }
     }
 
   toTransition edge =
@@ -80,7 +103,7 @@ describe spec edges =
 -- | build. A second, independent annotation on the same edges: `describe` says
 -- | how an edge came to exist, `annotate` says what it means to someone
 -- | navigating.
-annotate :: Induced String -> StateMachine Unit EdgeExtra -> StateMachine Unit EdgeExtra
+annotate :: forall se. Induced String -> StateMachine se EdgeExtra -> StateMachine se EdgeExtra
 annotate induced machine = machine
   { transitions = map mark machine.transitions }
   where
@@ -94,6 +117,6 @@ edgePairs machine = map (\e -> Tuple e.from e.to) machine.transitions
 -- |
 -- | A convenience: `induce` wants a `SimpleGraph`, and every caller was
 -- | otherwise writing the same three lines to build one.
-inducedFrom :: StateMachine Unit EdgeExtra -> String -> Induced String
+inducedFrom :: forall se te. StateMachine se te -> String -> Induced String
 inducedFrom machine root =
   induce root (mkSimpleGraph (map _.id machine.states) (edgePairs machine))

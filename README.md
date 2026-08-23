@@ -53,7 +53,7 @@ under an arbitrary UI.
 | `Glassbox.Export.StateDiagram` | one-way text export. Emits Mermaid's dialect because things render it for free; imports nothing and draws nothing |
 | `Glassbox.Draw` | *(glassbox-draw)* edges → `DataViz.Layout.StateMachine` |
 
-## The three vocabularies
+## The four vocabularies
 
 Owned by different people, and the distinction is load-bearing.
 
@@ -62,7 +62,9 @@ author; no runtime interprets them. **Config and facts** are the two
 halves of the world a guard may read — config is declared by the
 artifact and *reshapes* the machine, facts are supplied by the host and
 describe the world. **Refusals** are a closed list the artifact
-declares, so a refusal carries a tag rather than prose.
+declares, so a refusal carries a tag rather than prose. **Commands** are
+a closed list too, and they are the contract with the host: it can read
+them at load time and say up front which it cannot honour.
 
 Config versus parameter has a mechanical test, not a judgement call:
 *does the diagram change when you change it?*
@@ -78,12 +80,51 @@ tells an author this, and each has an obvious wrong answer the format
 accepts without complaint: a state per floor, a state per rinse, a
 paused-state per step.
 
+## Commands hang off states, not arrows
+
+A machine drives something as well as describing it, and the commands
+belong to a **state**, on entry and on exit:
+
+```
+recording:
+  entry  start-recorder
+  exit   stop-recorder
+  record, play  -> playing
+  stop          -> stopped
+```
+
+*Entering Recording starts the recorder* is written once and holds for
+every inbound edge, including the one somebody adds next month. Under
+the rejected shape — a command on each arrow — the fifth edge is the one
+that forgets, with the compiler perfectly happy.
+
+Three rules, each a decision rather than a consequence:
+
+- **A refusal commands nothing.** A refused press that nonetheless does
+  something is the bug the `Stay`/`Refuse` distinction exists to expose.
+- **`Stay` commands nothing** — it is a statechart *internal*
+  transition, so nothing is exited and nothing entered.
+- **`Move` to the state you are already in exits and re-enters.** That
+  is the *external* self-transition, and re-entering Recording genuinely
+  restarts the recorder. Statecharts need an explicit annotation for
+  this; the format gets it free from a field it has for other reasons.
+
+Commands carry no arguments. The machine emits an intent and the host,
+which holds all the memory, resolves the details.
+
+**Prefer `entry`; reach for `exit` rarely.** The corpus taught this and
+it was not predicted. An entry command says *what must now be true*, so
+it is safe however you arrived; an exit command is only safe when no
+neighbouring state could want the thing kept. The elevator's obvious
+`doors-open exit close-doors` is wrong, because `doors-held` is next
+door. The washing machine has twelve states, no exit commands, and reads
+better for it.
+
 ## What is deliberately absent
 
-**Effects.** A transition can move, stay or refuse; it cannot yet ask
-the host to *do* anything. Whether commands hang off edges or off state
-entry and exit is an open fork, and the version field exists so it can
-be settled without breaking artifacts written today.
+**Edge-specific commands.** A command that depends on *which event you
+arrived by* cannot be said. Shipping both shapes at once is how a format
+becomes unreadable; this one waits for an application that needs it.
 
 **Correctness lints.** Making the machine data gave up the
 exhaustiveness a `case` expression provided; nothing has yet bought it
@@ -118,7 +159,8 @@ spago test -p glassbox
 Drives the five-machine corpus in `core/machines/`: round-trip equality
 on the full (state × event) cross product, behaviour parity with the
 PureScript machine this replaced, config genuinely reshaping the derived
-edge set, and the boundary refusing a future version, a malformed case
-and non-JSON.
+edge set, every arrival at a state running that state's entry commands
+whichever edge it came along, and the boundary refusing a future
+version, a malformed case and non-JSON.
 
 Plan: `docs/kb/plans/the-same-machine.md` in the afc-work docs repo.

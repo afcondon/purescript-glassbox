@@ -38,6 +38,7 @@ module Test.Gen
 import Prelude
 
 import Data.Array (catMaybes, take)
+import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Int (toNumber)
 import Data.Map as Map
@@ -49,6 +50,7 @@ import Glassbox.Run (World)
 import Glassbox.Spec
   ( Case
   , CmpOp(..)
+  , CommandId(..)
   , ConfigId(..)
   , EventId(..)
   , EventSource(..)
@@ -60,6 +62,7 @@ import Glassbox.Spec
   , Spec
   , StateId(..)
   , Value(..)
+  , versionFor
   )
 import Test.QuickCheck.Gen (Gen, chooseInt, elements, oneOf, vectorOf)
 
@@ -173,6 +176,7 @@ genSpec = do
   nConfig <- chooseInt 0 2
   nFacts <- chooseInt 0 2
   nRefusals <- chooseInt 0 2
+  nCommands <- chooseInt 0 2
   -- Prose is part of the value now, so the round-trip property has to carry it.
   nNotes <- chooseInt 0 2
   let notes = take nNotes [ "a note", "another: with a colon" ]
@@ -182,6 +186,9 @@ genSpec = do
   let configIds = map ConfigId (take nConfig [ "c0", "c1" ])
   let factIds = map FactId (take nFacts [ "f0", "f1" ])
   let refusalIds = map RefusalId (take nRefusals [ "r0", "r1" ])
+  -- `k` rather than `c`, which config already has. Distinct namespaces in the
+  -- format, but a counterexample is read by a person.
+  let commandIds = map CommandId (take nCommands [ "k0", "k1" ])
 
   let
     vocab =
@@ -192,7 +199,7 @@ genSpec = do
       , refusals: refusalIds
       }
 
-  states <- traverse genStateDecl stateIds
+  states <- traverse (genStateDecl commandIds) stateIds
   events <- traverse genEventDecl eventIds
   config <- traverse genConfigDecl configIds
   rules <- catMaybes <$> traverse (genRule vocab) (crossProduct stateIds eventIds)
@@ -200,29 +207,50 @@ genSpec = do
   initial <- pick (StateId "s0") stateIds
   title <- pick "Generated" [ "Generated", "A title: with a colon", "" ]
 
-  pure
-    { version: 1
-    , notes: notes
-    , id: "generated"
-    , title
-    , initial
-    , states
-    , events
-    , config
-    , facts: map (\fid@(FactId raw) -> { id: fid, label: raw <> " is so" }) factIds
-    , refusals: map (\rid@(RefusalId raw) -> { id: rid, text: "because " <> raw }) refusalIds
-    , rules
-    , deadlines
-    }
+  let
+    spec =
+      { version: 1
+      , notes: notes
+      , id: "generated"
+      , title
+      , initial
+      , states
+      , events
+      , config
+      , facts: map (\fid@(FactId raw) -> { id: fid, label: raw <> " is so" }) factIds
+      , refusals: map (\rid@(RefusalId raw) -> { id: rid, text: "because " <> raw }) refusalIds
+      , commands: map (\kid@(CommandId raw) -> { id: kid, label: "do " <> raw }) commandIds
+      , rules
+      , deadlines
+      }
+
+  -- Honest about itself. The structural round-trip property compares the whole
+  -- value, and a decoder normalises the version upward to whatever the machine
+  -- actually uses, so a generator that always said 1 would fail that property
+  -- the moment it generated a command — for a reason that is the codec being
+  -- right rather than wrong.
+  pure (spec { version = versionFor spec })
   where
   crossProduct ss es = do
     s <- ss
     e <- es
     pure (Tuple s e)
 
-  genStateDecl sid@(StateId raw) = do
+  -- Commands are drawn from the machine's own declared list, so a generated
+  -- artifact is closed over its command vocabulary the way a real one is. Both
+  -- hooks are often empty: most states do nothing on the way in or out, and a
+  -- generator that gave every state a command would never test the common case.
+  genStateDecl commandIds sid@(StateId raw) = do
     final <- pick false [ false, false, false, true ]
-    pure { id: sid, label: raw <> " state", final }
+    entry <- someOf commandIds
+    exit <- someOf commandIds
+    pure { id: sid, label: raw <> " state", final, entry, exit }
+
+  someOf pool =
+    if Array.null pool then pure []
+    else do
+      n <- chooseInt 0 2
+      if n == 0 then pure [] else vectorOf n (pick (CommandId "k0") pool)
 
   genEventDecl eid@(EventId raw) = do
     source <- pick FromUser [ FromUser, FromUser, FromRuntime ]

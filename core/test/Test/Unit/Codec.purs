@@ -57,6 +57,9 @@ accepts = isRight <<< parseSpec
 specOf :: String -> Maybe Spec
 specOf = hush <<< parseSpec
 
+versionOf :: String -> Maybe Int
+versionOf = map _.version <<< specOf
+
 errorOf :: String -> String
 errorOf = either identity (const "<accepted>") <<< parseSpec
 
@@ -95,19 +98,21 @@ envelopeUnits = do
   i <- check "a version that is not a whole number is refused"
     (rejects """{"glassbox":1.5,"id":"m","initial":"a","states":[]}""")
   j <- check "one version beyond this build is refused"
-    (rejects """{"glassbox":2,"id":"m","initial":"a","states":[]}""")
+    (rejects """{"glassbox":3,"id":"m","initial":"a","states":[]}""")
   k <- check "the refusal says which version it saw and which it reads"
-    ( mentions "2" (errorOf """{"glassbox":2,"id":"m","initial":"a","states":[]}""")
-        && mentions "glassbox" (errorOf """{"glassbox":2,"id":"m","initial":"a","states":[]}""")
+    ( mentions "3" (errorOf """{"glassbox":3,"id":"m","initial":"a","states":[]}""")
+        && mentions "glassbox" (errorOf """{"glassbox":3,"id":"m","initial":"a","states":[]}""")
     )
 
-  -- Only *future* versions are refused. Version 0 — a format that predates the
-  -- first published one, and that this build has no reader for — sails through
-  -- and is decoded as though it were version 1. Documented, not endorsed.
-  l <- check "a version BELOW this build is accepted and read as if current (documented)"
-    (accepts """{"glassbox":0,"id":"m","initial":"a","states":[{"id":"a"}]}""")
-  m <- check "a negative version is accepted too (documented)"
-    (accepts """{"glassbox":-3,"id":"m","initial":"a","states":[{"id":"a"}]}""")
+  -- Only *future* versions are refused, and the rest are normalised UPWARD to
+  -- the version they actually need. Version 0 and negatives used to sail
+  -- through and keep a number no reader could act on; they now read as the 1
+  -- they are. This was one of the format's recorded oddities and the effects
+  -- fork closed it as a side effect of having to compute a version at all.
+  l <- check "a version BELOW this build is read as the version it actually needs"
+    (versionOf """{"glassbox":0,"id":"m","initial":"a","states":[{"id":"a"}]}""" == Just 1)
+  m <- check "and so is a negative one"
+    (versionOf """{"glassbox":-3,"id":"m","initial":"a","states":[{"id":"a"}]}""" == Just 1)
 
   n <- check "a missing id is refused"
     (rejects """{"glassbox":1,"initial":"a","states":[{"id":"a"}]}""")

@@ -8,6 +8,8 @@ module Test.Main where
 import Prelude
 
 import Data.Array (all, elem, filter, length, null)
+import Data.Array as Array
+import Data.Foldable (any)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), isJust)
 import Data.Traversable (for, sequence)
@@ -16,9 +18,10 @@ import Effect (Effect)
 import Effect.Console (log)
 import Glassbox.Codec.JSON (decodeSpec, encodeSpec, parseSpec)
 import Glassbox.Edges (defaultOptions, edgesOf, inboundTo)
-import Glassbox.Run (dueAt, resolve, setConfig, setFact, step, worldFrom)
+import Glassbox.Run (commandsFor, dueAt, resolve, setConfig, setFact, startCommands, step, worldFrom)
 import Glassbox.Spec
-  ( ConfigId(..)
+  ( CommandId(..)
+  , ConfigId(..)
   , EventId(..)
   , FactId(..)
   , Outcome(..)
@@ -26,7 +29,9 @@ import Glassbox.Spec
   , Spec
   , StateId(..)
   , Value(..)
+  , entryOf
   , eventIds
+  , exitOf
   , stateIds
   , userEvents
   )
@@ -36,6 +41,7 @@ import Node.Process (exit', setExitCode)
 import Test.Harness (check, section)
 import Test.Property (properties)
 import Test.Unit.Codec (codecUnits)
+import Test.Unit.Commands (commandUnits)
 import Test.Unit.Edges (edgeUnits)
 import Test.Unit.DSL (dslUnits, roundTripsMachine)
 import Test.Unit.Export (exportUnits)
@@ -60,6 +66,10 @@ readMachine name = do
   let fromRoot = "core/machines/" <> name
   here <- exists local
   readTextFile UTF8 (if here then local else fromRoot)
+
+-- | The five artifacts every corpus-wide check runs over.
+corpus :: Array String
+corpus = [ "loop.json", "car-radio.json", "elevator.json", "washing-machine.json", "heating.json" ]
 
 loadOrDie :: String -> Effect Spec
 loadOrDie name = do
@@ -163,7 +173,7 @@ configReshapesTheDiagram = do
 roundTrips :: Effect (Array Boolean)
 roundTrips = do
   section "The round trip"
-  for ["loop.json", "car-radio.json", "elevator.json", "washing-machine.json", "heating.json"] \name -> do
+  for corpus \name -> do
     spec <- loadOrDie name
     case decodeSpec (encodeSpec spec) of
       Left err -> check (name <> " survives encode/decode") false <* log ("    " <> err)
@@ -177,7 +187,7 @@ roundTrips = do
 dslCorpus :: Effect (Array Boolean)
 dslCorpus = do
   section "DSL.Blocks over the corpus"
-  groups <- for [ "loop.json", "car-radio.json", "elevator.json", "washing-machine.json", "heating.json" ] \name -> do
+  groups <- for corpus \name -> do
     spec <- loadOrDie name
     roundTripsMachine name spec
   pure (join groups)
@@ -341,6 +351,76 @@ hostHoldsTheMemory = do
     not (null (inboundTo (StateId target) (edgesOf defaultOptions world spec)))
 
 -- =============================================================================
+-- The effects fork, over real artifacts
+-- =============================================================================
+
+-- | The claim the fork was chosen for, checked against all five machines.
+-- |
+-- | *Entering Recording starts the recorder, and that holds for every inbound
+-- | edge including ones that do not exist yet.* Stated over the corpus rather
+-- | than over a fixture, because the failure mode it prevents — one edge out of
+-- | four forgetting its command — only appears in a machine with four edges.
+-- |
+-- | The second check is the more interesting one. It walks every (state, event)
+-- | pair in every machine and insists that whenever two of them land in the
+-- | same place, they ask the host for exactly the same thing. Under the rejected
+-- | shape — commands hanging off the edge — this would be false by construction
+-- | for any machine whose author slipped once, and nothing would have said so.
+commandsAreSaidOnce :: Effect (Array Boolean)
+commandsAreSaidOnce = do
+  section "A command is written once on the state and holds for every way in"
+
+  results <- for corpus \name -> do
+    spec <- loadOrDie name
+    let world = worldFrom spec
+
+    let
+      arrivals = do
+        Tuple from event <- crossProduct spec
+        case resolve spec world from event of
+          Move to -> [ { from, event, to, commands: commandsFor spec from (Move to) } ]
+          _ -> []
+
+    -- Every arrival at a state ends with that state's entry commands, whichever
+    -- edge it came along.
+    let missing = filter (\a -> not (endsWith (entryOf spec a.to) a.commands)) arrivals
+
+    a <- check (name <> ": all " <> show (length arrivals) <> " arrivals run the destination's entry commands")
+      (null missing)
+
+    -- And two events landing in the same place from the same place are
+    -- indistinguishable to the host.
+    let
+      inconsistent = filter
+        (\a -> any (\b -> b.from == a.from && b.to == a.to && b.commands /= a.commands) arrivals)
+        arrivals
+    b <- check (name <> ": two events with the same destination ask for the same thing")
+      (null inconsistent)
+
+    pure [ a, b ]
+
+  -- The looper starts in Empty, which discards audio; four of the five machines
+  -- owe the host something before a single event has been delivered.
+  loop <- loadOrDie "loop.json"
+  c <- check "starting the looper owes the host its initial state's entry commands"
+    (startCommands loop == [ CommandId "discard-audio" ])
+
+  -- The one that would be a silent bug: a refusal that nonetheless does
+  -- something. Checked on the real machine, where a refusal leaves a state that
+  -- genuinely has an exit command.
+  radio <- loadOrDie "car-radio.json"
+  let rworld = worldFrom radio
+  d <- check "a refused eject in Seeking runs nothing, though leaving Seeking would"
+    ( resolve radio rworld (StateId "seeking") (EventId "eject") == Refuse (RefusalId "no-disc")
+        && commandsFor radio (StateId "seeking") (Refuse (RefusalId "no-disc")) == []
+        && exitOf radio (StateId "seeking") == [ CommandId "stop-seek" ]
+    )
+
+  pure (join results <> [ c, d ])
+  where
+  endsWith suffix xs = Array.drop (length xs - length suffix) xs == suffix
+
+-- =============================================================================
 -- The boundary refuses what it does not understand
 -- =============================================================================
 
@@ -381,12 +461,14 @@ main = do
     , loopParity
     , elevatorStressesTheFormat
     , hostHoldsTheMemory
+    , commandsAreSaidOnce
     , boundaryIsChecked
     , dslCorpus
     , dslUnits
     , runUnits
     , edgeUnits
     , codecUnits
+    , commandUnits
     , exportUnits
     , properties
     ]

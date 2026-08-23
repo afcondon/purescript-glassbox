@@ -1,7 +1,7 @@
 -- | Glassbox.DSL.Print
 -- |
--- | Three candidate textual syntaxes for a machine, printed side by side so a
--- | human can pick one.
+-- | Two textual syntaxes for a machine: the authoring one, and a grid that
+-- | reads it back to you a different way.
 -- |
 -- | ### Why this exists
 -- |
@@ -13,11 +13,11 @@
 -- | in a handful of guarded rules. A syntax that does not exploit that shape is
 -- | not paying its way.
 -- |
--- | This module is a **design experiment, not a commitment**. There is no parser
--- | and nothing consumes the output. It exists so that the same five machines can
--- | be read in three notations and one of them chosen — or all three rejected.
+-- | `Blocks` was chosen and has a parser — `Glassbox.DSL.Parse` — so it is the
+-- | authoring format proper. `Table` remains print-only, deliberately: it is a
+-- | *reading* of a machine, and its value is in showing what a list cannot.
 -- |
--- | ### The three bets
+-- | ### The two bets
 -- |
 -- |   * `Blocks` — grouped by state, events sharing an outcome listed together,
 -- |     guards as an aligned alternation. The bet is that a reader's question is
@@ -28,7 +28,7 @@
 -- |     because the format has no totality lint yet and a missing pair silently
 -- |     resolves to `Stay`.
 -- |
--- | ### The rule all three obey
+-- | ### The rule both obey
 -- |
 -- | **Nothing in `Spec` may be dropped.** A syntax that loses information is
 -- | disqualified as an authoring format, so where a construct is awkward it is
@@ -69,6 +69,7 @@ import Data.Tuple (Tuple(..))
 import Glassbox.Spec
   ( Case
   , CmpOp(..)
+  , CommandId(..)
   , ConfigId(..)
   , Deadline
   , EventId(..)
@@ -82,6 +83,7 @@ import Glassbox.Spec
   , Spec
   , StateId(..)
   , Value(..)
+  , versionFor
   )
 
 -- =============================================================================
@@ -197,6 +199,10 @@ rawConfig = case _ of
 rawFact :: FactId -> String
 rawFact = case _ of
   FactId s -> s
+
+rawCommand :: CommandId -> String
+rawCommand = case _ of
+  CommandId s -> s
 
 -- =============================================================================
 -- Guards, expressions, outcomes
@@ -378,7 +384,7 @@ printBlocks spec = finish (notesLines <> preamble <> declarations <> body)
 
   preamble = layout ""
     [ Cells [ "machine", spec.id, quote spec.title ]
-    , Cells [ "format", show spec.version ]
+    , Cells [ "format", show (versionFor spec) ]
     , Cells [ "initial", rawState spec.initial ]
     ]
 
@@ -391,6 +397,7 @@ printBlocks spec = finish (notesLines <> preamble <> declarations <> body)
     , section "config" (map configRow spec.config)
     , section "facts" (map factRow spec.facts)
     , section "refusals" (map refusalRow spec.refusals)
+    , section "commands" (map commandRow spec.commands)
     ]
 
   section name rows =
@@ -401,6 +408,7 @@ printBlocks spec = finish (notesLines <> preamble <> declarations <> body)
   configRow c = [ rawConfig c.id, "= " <> literalText c.default, labelPart (rawConfig c.id) c.label ]
   factRow f = [ rawFact f.id, labelPart (rawFact f.id) f.label ]
   refusalRow r = [ rawRefusal r.id, quote r.text ]
+  commandRow c = [ rawCommand c.id, labelPart (rawCommand c.id) c.label ]
 
   blockStates = map _.id spec.states <> undeclaredStates spec
 
@@ -415,8 +423,25 @@ printBlocks spec = finish (notesLines <> preamble <> declarations <> body)
 
   eventsOf g = joinWith ", " (map rawEvent g.events)
 
+  -- Two `layout` calls, so the commands align with each other and the rules
+  -- align with each other, and neither pushes the other's columns about. They
+  -- are answering different questions — *what does being here do* and *what do
+  -- events do* — and lining them up as one grid implied a relationship between
+  -- a command and an outcome that there is not.
   block sid =
-    layout "  " ([ Raw "", Raw (headerFor sid) ] <> bodyFor sid)
+    [ "", headerFor sid ]
+      <> layout "  " (commandLines sid)
+      <> layout "  " (bodyFor sid)
+
+  commandLines sid =
+    hookLine "entry" (entryCommands sid) <> hookLine "exit" (exitCommands sid)
+
+  hookLine word = case _ of
+    [] -> []
+    cs -> [ Cells [ word, joinWith ", " (map rawCommand cs) ] ]
+
+  entryCommands sid = maybe [] _.entry (find (\d -> d.id == sid) spec.states)
+  exitCommands sid = maybe [] _.exit (find (\d -> d.id == sid) spec.states)
 
   headerFor sid =
     rawState sid <> ":" <> case modifiers sid of
@@ -488,7 +513,7 @@ printTable spec = finish (preamble <> declarations <> grid <> legend <> notesSec
   preamble = layout ""
     [ Cells [ "machine", spec.id ]
     , Cells [ "title", quote spec.title ]
-    , Cells [ "format", show spec.version ]
+    , Cells [ "format", show (versionFor spec) ]
     , Cells [ "initial", rawState spec.initial ]
     ]
 
@@ -496,8 +521,17 @@ printTable spec = finish (preamble <> declarations <> grid <> legend <> notesSec
   -- the label is always the last field on the line, so a space in it is
   -- unambiguous and a pair of quotes is pure noise.
   declarations = concat
-    [ table [ "STATES", "LABEL" ]
-        (map (\s -> [ "  " <> rawState s.id, plainLabel (rawState s.id) s.label ]) spec.states)
+    [ table [ "STATES", "LABEL", "ON ENTRY", "ON EXIT" ]
+        ( map
+            ( \s ->
+                [ "  " <> rawState s.id
+                , plainLabel (rawState s.id) s.label
+                , joinWith ", " (map rawCommand s.entry)
+                , joinWith ", " (map rawCommand s.exit)
+                ]
+            )
+            spec.states
+        )
     , table [ "EVENTS", "SOURCE", "LABEL" ]
         (map (\e -> [ "  " <> rawEvent e.id, sourceText e.source, plainLabel (rawEvent e.id) e.label ]) spec.events)
     , table [ "CONFIG", "DEFAULT", "LABEL" ]
@@ -506,6 +540,8 @@ printTable spec = finish (preamble <> declarations <> grid <> legend <> notesSec
         (map (\f -> [ "  " <> rawFact f.id, plainLabel (rawFact f.id) f.label ]) spec.facts)
     , table [ "REFUSALS", "MEANING" ]
         (map (\r -> [ "  " <> rawRefusal r.id, r.text ]) spec.refusals)
+    , table [ "COMMANDS", "MEANING" ]
+        (map (\c -> [ "  " <> rawCommand c.id, plainLabel (rawCommand c.id) c.label ]) spec.commands)
     ]
 
   plainLabel id label = if label == id then "" else label
