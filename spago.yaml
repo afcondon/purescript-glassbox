@@ -1,0 +1,8 @@
+workspace:
+  packageSet:
+    registry: 77.13.1
+  extraPackages:
+    hylograph-layout:
+      path: ../purescript-hylograph-layout
+    hylograph-graph:
+      path: ../purescript-hylograph-graph

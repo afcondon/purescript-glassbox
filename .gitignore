@@ -1,0 +1,7 @@
+output/
+.spago/
+node_modules/
+*.lock
+.DS_Store
+.psc-ide-port
+.direnv/
