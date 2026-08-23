@@ -1,0 +1,86 @@
+machine  elevator  "Elevator"
+format   1
+initial  idle
+
+states
+  idle        "Idle"
+  up          "Going up"
+  down        "Going down"
+  arriving    "Arriving"
+  doors-open  "Doors open"
+  held        "Doors held"
+  stopped     "Emergency stop"
+
+events
+  call     user
+  open     user     "open doors"
+  close    user     "close doors"
+  alarm    user     "emergency stop"
+  reset    user
+  reached  runtime  "floor reached"
+  dwelt    runtime  "dwell elapsed"
+
+config
+  dwell-seconds    = 6     "Doors stay open for (s)"
+  has-hold-button  = true  "This car has a hold button"
+
+facts
+  wanted-above   "A floor above is requested"
+  wanted-below   "A floor below is requested"
+  doors-blocked  "Something is in the doorway"
+
+refusals
+  nowhere-to-go   "no floor is requested"
+  moving          "the car is moving"
+  blocked         "something is in the doorway"
+  no-hold-button  "this car has no hold button"
+  stopped-fast    "the emergency stop is engaged"
+
+idle:
+  call                               | wanted-above  -> up
+                                     | wanted-below  -> down
+                                     | otherwise     -> refuse nowhere-to-go
+  open                                               -> doors-open
+  close, reset, reached, dwelt                       -> stay
+  alarm                                              -> stopped
+
+up:
+  reached                            -> arriving
+  alarm                              -> stopped
+  open                               -> refuse moving
+  call, close, reset, dwelt          -> stay
+
+down:
+  reached                            -> arriving
+  alarm                              -> stopped
+  open                               -> refuse moving
+  call, close, reset, dwelt          -> stay
+
+arriving:
+  dwelt, open                        -> doors-open
+  alarm                              -> stopped
+  call, close, reset, reached        -> stay
+
+doors-open:  after dwell-seconds fires dwelt
+  close                              | doors-blocked        -> refuse blocked
+                                     | wanted-above         -> up
+                                     | wanted-below         -> down
+                                     | otherwise            -> idle
+  dwelt                              | doors-blocked        -> stay
+                                     | wanted-above         -> up
+                                     | wanted-below         -> down
+                                     | otherwise            -> idle
+  open                               | not has-hold-button  -> refuse no-hold-button
+                                     | otherwise            -> held
+  alarm                                                     -> stopped
+  call, reset, reached                                      -> stay
+
+held:
+  close                              -> doors-open
+  alarm                              -> stopped
+  open, call, reset, reached, dwelt  -> stay
+
+stopped:
+  reset                              -> doors-open
+  call, open, close                  -> refuse stopped-fast
+  alarm, reached, dwelt              -> stay

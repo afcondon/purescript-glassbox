@@ -33,18 +33,21 @@ import Glassbox.Spec
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync (exists, readTextFile)
 import Node.Process (exit', setExitCode)
+import Test.Harness (check, section)
+import Test.Property (properties)
+import Test.Unit.Codec (codecUnits)
+import Test.Unit.Edges (edgeUnits)
+import Test.Unit.Export (exportUnits)
+import Test.Unit.Run (runUnits)
 
 -- =============================================================================
--- Harness — matches the plain-Effect style used by hylograph-layout's tests
+-- Harness
 -- =============================================================================
-
-check :: String -> Boolean -> Effect Boolean
-check name ok = do
-  log ((if ok then "  ok   " else "  FAIL ") <> name)
-  pure ok
-
-section :: String -> Effect Unit
-section name = log ("\n" <> name)
+--
+-- `check` and `section` moved to `Test.Harness` when the library suite grew
+-- past this file; the style is unchanged — a plain-Effect runner printing
+-- `ok`/`FAIL` and counting — and `Test.Harness.prop` folds a QuickCheck
+-- property into the same tally so one run still gives one verdict.
 
 -- | spago may run tests from the package directory or from the workspace root.
 -- |
@@ -348,6 +351,16 @@ boundaryIsChecked = do
 
 -- =============================================================================
 
+-- | Two suites, one tally.
+-- |
+-- | The **conformance corpus** comes first: the five machines in
+-- | `core/machines/`, driven as artifacts, which is what the phase 1 acceptance
+-- | criterion is stated over. The **library suite** follows: the same code
+-- | examined one function at a time, plus properties over generated machines.
+-- |
+-- | They answer different questions and neither replaces the other. The corpus
+-- | says a real artifact works; the library suite says which decision breaks
+-- | when it stops working.
 main :: Effect Unit
 main = do
   log "Glassbox — phase 1"
@@ -359,6 +372,11 @@ main = do
     , elevatorStressesTheFormat
     , hostHoldsTheMemory
     , boundaryIsChecked
+    , runUnits
+    , edgeUnits
+    , codecUnits
+    , exportUnits
+    , properties
     ]
   let results = join groups
   let passed = length (filter identity results)

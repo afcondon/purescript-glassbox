@@ -35,6 +35,8 @@ module Glassbox.Edges
 import Prelude
 
 import Data.Array (concatMap, elem, filter, nub, nubEq, sort)
+import Data.Foldable (foldl)
+import Data.Set as Set
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
@@ -145,10 +147,30 @@ merge edges = Array.mapMaybe rebuild (nub (map key edges))
 inboundTo :: StateId -> Array Edge -> Array Edge
 inboundTo target = filter (\e -> e.to == target && e.from /= target)
 
--- | Every state something can actually get to, plus the initial state.
+-- | Every state actually reachable from the initial state, by any route.
+-- |
+-- | This is a transitive closure and it has to be. An earlier version was
+-- | `initial <> every non-self edge target`, which is in-degree rather than
+-- | reachability: a stranded island `c --go--> d` reported `d` as reachable
+-- | purely because `c` pointed at it, so `unreachableStates` only ever caught
+-- | the *head* of a stranded component and quietly passed the rest.
+-- |
+-- | Self-loops are excluded from the walk: refusing an event where you already
+-- | are is not a way of getting anywhere.
 reachableStates :: Spec -> Array Edge -> Array StateId
-reachableStates spec edges =
-  nub ([ spec.initial ] <> map _.to (filter (\e -> e.from /= e.to) edges))
+reachableStates spec edges = Set.toUnfoldable (walk (Set.singleton spec.initial) [ spec.initial ])
+  where
+  walk seen frontier = case Array.uncons frontier of
+    Nothing -> seen
+    Just { head, tail } ->
+      let
+        found = filter (\s -> not (Set.member s seen)) (successorsOf head)
+        seen' = foldl (flip Set.insert) seen found
+      in
+        walk seen' (tail <> found)
+
+  successorsOf from =
+    nub (map _.to (filter (\e -> e.from == from && e.to /= e.from) edges))
 
 -- | States the machine declares and cannot arrive at under this world.
 -- |

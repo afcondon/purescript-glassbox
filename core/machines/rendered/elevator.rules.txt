@@ -1,0 +1,89 @@
+format   1
+machine  elevator
+title    "Elevator"
+initial  idle
+
+state     idle                      "Idle"
+state     up                        "Going up"
+state     down                      "Going down"
+state     arriving                  "Arriving"
+state     doors-open                "Doors open"
+state     held                      "Doors held"
+state     stopped                   "Emergency stop"
+event     call             user
+event     open             user     "open doors"
+event     close            user     "close doors"
+event     alarm            user     "emergency stop"
+event     reset            user
+event     reached          runtime  "floor reached"
+event     dwelt            runtime  "dwell elapsed"
+config    dwell-seconds    = 6      "Doors stay open for (s)"
+config    has-hold-button  = true   "This car has a hold button"
+fact      wanted-above              "A floor above is requested"
+fact      wanted-below              "A floor below is requested"
+fact      doors-blocked             "Something is in the doorway"
+refusal   nowhere-to-go             "no floor is requested"
+refusal   moving                    "the car is moving"
+refusal   blocked                   "something is in the doorway"
+refusal   no-hold-button            "this car has no hold button"
+refusal   stopped-fast              "the emergency stop is engaged"
+deadline  doors-open                after dwell-seconds fires dwelt
+
+idle        call     when wanted-above         -> up
+idle        call     elif wanted-below         -> down
+idle        call     else                      refuse nowhere-to-go
+idle        open                               -> doors-open
+idle        close                              stay
+idle        alarm                              -> stopped
+idle        reset                              stay
+idle        reached                            stay
+idle        dwelt                              stay
+up          reached                            -> arriving
+up          alarm                              -> stopped
+up          open                               refuse moving
+up          call                               stay
+up          close                              stay
+up          reset                              stay
+up          dwelt                              stay
+down        reached                            -> arriving
+down        alarm                              -> stopped
+down        open                               refuse moving
+down        call                               stay
+down        close                              stay
+down        reset                              stay
+down        dwelt                              stay
+arriving    dwelt                              -> doors-open
+arriving    alarm                              -> stopped
+arriving    open                               -> doors-open
+arriving    call                               stay
+arriving    close                              stay
+arriving    reset                              stay
+arriving    reached                            stay
+doors-open  close    when doors-blocked        refuse blocked
+doors-open  close    elif wanted-above         -> up
+doors-open  close    elif wanted-below         -> down
+doors-open  close    else                      -> idle
+doors-open  dwelt    when doors-blocked        stay
+doors-open  dwelt    elif wanted-above         -> up
+doors-open  dwelt    elif wanted-below         -> down
+doors-open  dwelt    else                      -> idle
+doors-open  open     when not has-hold-button  refuse no-hold-button
+doors-open  open     else                      -> held
+doors-open  alarm                              -> stopped
+doors-open  call                               stay
+doors-open  reset                              stay
+doors-open  reached                            stay
+held        close                              -> doors-open
+held        alarm                              -> stopped
+held        open                               stay
+held        call                               stay
+held        reset                              stay
+held        reached                            stay
+held        dwelt                              stay
+stopped     reset                              -> doors-open
+stopped     call                               refuse stopped-fast
+stopped     open                               refuse stopped-fast
+stopped     close                              refuse stopped-fast
+stopped     alarm                              stay
+stopped     reached                            stay
+stopped     dwelt                              stay

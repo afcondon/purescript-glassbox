@@ -1,0 +1,82 @@
+machine  heating  "Heating controller"
+format   1
+initial  off
+
+states
+  off        "Off"
+  frost      "Frost watch"
+  satisfied  "Up to temperature"
+  heating    "Heating"
+  boosting   "Boost"
+  fault      "Fault"
+
+events
+  mode        user
+  boost       user
+  cancel      user     "cancel boost"
+  reset       user
+  calls       runtime  "thermostat calls"
+  satisfies   runtime  "thermostat satisfied"
+  boost-over  runtime  "boost elapsed"
+  faults      runtime  "boiler fault"
+
+config
+  has-frost-watch  = true  "Frost protection fitted"
+  boost-minutes    = 60    "Boost lasts (minutes)"
+
+facts
+  scheduled-on  "The timer says it should be on"
+  below-frost   "It is cold enough to worry about pipes"
+
+refusals
+  in-fault      "the boiler has locked out; reset it first"
+  no-frost      "this controller has no frost protection"
+  not-boosting  "no boost is running"
+
+off:
+  mode                                  | scheduled-on                     -> heating
+                                        | otherwise                        -> satisfied
+  calls                                 | has-frost-watch and below-frost  -> frost
+                                        | otherwise                        -> stay
+  boost                                 | not has-frost-watch              -> refuse no-frost
+                                        | otherwise                        -> boosting
+  cancel                                                                   -> refuse not-boosting
+  reset, satisfies, boost-over                                             -> stay
+  faults                                                                   -> fault
+
+frost:
+  satisfies                             -> off
+  mode                                  -> satisfied
+  boost                                 -> boosting
+  faults                                -> fault
+  calls, reset, boost-over              -> stay
+  cancel                                -> refuse not-boosting
+
+satisfied:
+  calls                                 | scheduled-on  -> heating
+                                        | otherwise     -> stay
+  mode                                                  -> off
+  boost                                                 -> boosting
+  faults                                                -> fault
+  satisfies, reset, boost-over                          -> stay
+  cancel                                                -> refuse not-boosting
+
+heating:
+  satisfies                             -> satisfied
+  mode                                  -> off
+  boost                                 -> boosting
+  faults                                -> fault
+  calls, reset, boost-over              -> stay
+  cancel                                -> refuse not-boosting
+
+boosting:  after boost-minutes fires boost-over
+  boost-over, cancel                    | scheduled-on  -> heating
+                                        | otherwise     -> satisfied
+  faults                                                -> fault
+  mode                                                  -> off
+  boost, calls, satisfies, reset                        -> stay
+
+fault:
+  reset                                 -> off
+  mode, boost, cancel                   -> refuse in-fault
+  calls, satisfies, boost-over, faults  -> stay

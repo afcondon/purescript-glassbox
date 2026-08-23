@@ -1,0 +1,119 @@
+machine  washing-machine  "Washing machine"
+format   1
+initial  idle
+
+states
+  idle           "Idle"
+  locking        "Locking"
+  prewashing     "Prewash"
+  filling        "Filling"
+  washing        "Washing"
+  draining       "Draining"
+  rinse-filling  "Rinse fill"
+  rinsing        "Rinsing"
+  spinning       "Spinning"
+  unlocking      "Unlocking"
+  done           "Done"
+  paused         "Paused"
+
+events
+  start      user
+  pause      user
+  resume     user
+  cancel     user
+  open       user     "open door"
+  step-done  runtime  "step complete"
+
+config
+  has-prewash  = false  "Prewash in this programme"
+
+facts
+  door-shut        "The door is shut"
+  more-rinses      "The controller wants another rinse"
+  drum-wet         "There is water in the drum"
+  paused-in-fill   "Paused while filling"
+  paused-in-rinse  "Paused while rinsing"
+
+refusals
+  door-ajar    "the door is not shut"
+  door-locked  "the door is locked while the drum is running"
+  still-wet    "the drum must drain before the door opens"
+  not-running  "nothing is running"
+
+idle:
+  start                         | not door-shut  -> refuse door-ajar
+                                | otherwise      -> locking
+  open, cancel, step-done                        -> stay
+  pause, resume                                  -> refuse not-running
+
+locking:
+  step-done                     | has-prewash  -> prewashing
+                                | otherwise    -> filling
+  cancel                                       -> unlocking
+  open                                         -> refuse door-locked
+  pause                                        -> paused
+  resume, start                                -> stay
+
+prewashing:
+  step-done, cancel             -> draining
+  pause                         -> paused
+  open                          -> refuse door-locked
+  resume, start                 -> stay
+
+filling:
+  step-done                     -> washing
+  pause                         -> paused
+  cancel                        -> draining
+  open                          -> refuse door-locked
+  resume, start                 -> stay
+
+washing:
+  step-done, cancel             -> draining
+  pause                         -> paused
+  open                          -> refuse door-locked
+  resume, start                 -> stay
+
+draining:
+  step-done                     | more-rinses  -> rinse-filling
+                                | otherwise    -> spinning
+  pause, cancel, resume, start                 -> stay
+  open                                         -> refuse door-locked
+
+rinse-filling:
+  step-done                     -> rinsing
+  pause                         -> paused
+  cancel                        -> draining
+  open                          -> refuse door-locked
+  resume, start                 -> stay
+
+rinsing:
+  step-done, cancel             -> draining
+  pause                         -> paused
+  open                          -> refuse door-locked
+  resume, start                 -> stay
+
+spinning:
+  step-done, cancel             -> unlocking
+  pause                         -> paused
+  open                          -> refuse door-locked
+  resume, start                 -> stay
+
+unlocking:
+  step-done                     | drum-wet   -> refuse still-wet
+                                | otherwise  -> done
+  open                                       -> refuse door-locked
+  pause, resume, cancel, start               -> stay
+
+done:  final
+  open                          -> idle
+  start                         -> locking
+  pause, resume                 -> refuse not-running
+  cancel, step-done             -> stay
+
+paused:
+  resume                        | paused-in-rinse  -> rinsing
+                                | paused-in-fill   -> filling
+                                | otherwise        -> washing
+  cancel                                           -> draining
+  open                                             -> refuse door-locked
+  pause, start, step-done                          -> stay

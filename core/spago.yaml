@@ -20,5 +20,10 @@ package:
     dependencies:
       - console
       - effect
+      - exceptions
+      - lists
       - node-fs
       - node-process
+      - quickcheck
+      - random
+      - transformers
