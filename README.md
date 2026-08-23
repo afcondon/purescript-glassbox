@@ -49,6 +49,7 @@ under an arbitrary UI.
 | `Glassbox.Run` | the runtime: a pure function of (world, state, event) |
 | `Glassbox.Edges` | the edge set, derived by resolving every pair under a world |
 | `Glassbox.Codec.JSON` | the wire format: one bidirectional codec, versioned |
+| `Glassbox.DSL.Print` / `Glassbox.DSL.Parse` | the Blocks authoring syntax, printed and read back. `Table` is a second, read-only rendering |
 | `Glassbox.Export.StateDiagram` | one-way text export. Emits Mermaid's dialect because things render it for free; imports nothing and draws nothing |
 | `Glassbox.Draw` | *(glassbox-draw)* edges → `DataViz.Layout.StateMachine` |
 
@@ -92,6 +93,21 @@ stays put.
 **Composition.** A real boiler serves heating and hot water as
 independent circuits. Two machines sharing a resource cannot be said in
 this format.
+
+## Three surfaces, one value
+
+**Blocks** is what a person edits, **JSON** is what hashes and what a
+second runtime agrees to, and **Table** and **state-diagram text** are
+read-only renderings. All decode to or derive from the same `Spec`,
+which is the only reason it is safe to have more than one.
+
+Blocks round-trips a machine's *meaning* rather than its byte layout:
+`parse (print s)` behaves identically to `s` on the full (state × event)
+cross product and carries the same declarations, prose and deadlines,
+but need not recover `s.rules` in the same array order, because the
+printer groups events that share a case list. What holds instead, and is
+what matters for a file in git, is that printing is **idempotent through
+a parse** — an author's file is stable once written.
 
 ## Tests
 

@@ -37,6 +37,7 @@ import Test.Harness (check, section)
 import Test.Property (properties)
 import Test.Unit.Codec (codecUnits)
 import Test.Unit.Edges (edgeUnits)
+import Test.Unit.DSL (dslUnits, roundTripsMachine)
 import Test.Unit.Export (exportUnits)
 import Test.Unit.Run (runUnits)
 
@@ -171,6 +172,15 @@ roundTrips = do
         let same = all (\(Tuple s e) -> resolve spec world s e == resolve back world s e) (crossProduct spec)
         let sameShape = stateIds spec == stateIds back && eventIds spec == eventIds back
         check (name <> " round-trips, identically on every (state x event)") (same && sameShape)
+
+-- | The Blocks syntax over the same five machines the JSON codec is held to.
+dslCorpus :: Effect (Array Boolean)
+dslCorpus = do
+  section "DSL.Blocks over the corpus"
+  groups <- for [ "loop.json", "car-radio.json", "elevator.json", "washing-machine.json", "heating.json" ] \name -> do
+    spec <- loadOrDie name
+    roundTripsMachine name spec
+  pure (join groups)
 
 crossProduct :: Spec -> Array (Tuple StateId EventId)
 crossProduct spec = do
@@ -372,6 +382,8 @@ main = do
     , elevatorStressesTheFormat
     , hostHoldsTheMemory
     , boundaryIsChecked
+    , dslCorpus
+    , dslUnits
     , runUnits
     , edgeUnits
     , codecUnits

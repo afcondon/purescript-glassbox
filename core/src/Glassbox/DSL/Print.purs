@@ -63,6 +63,8 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.String (Pattern(..), joinWith, stripSuffix)
 import Data.String as String
+import Data.String.Common (replaceAll)
+import Data.String.Pattern (Pattern(..), Replacement(..))
 import Data.Tuple (Tuple(..))
 import Glassbox.Spec
   ( Case
@@ -286,8 +288,14 @@ sourceText = case _ of
   FromUser -> "user"
   FromRuntime -> "runtime"
 
+-- | Escaped, because a printer whose output cannot be read back is not a
+-- | printer for an authoring format. Backslash first or it eats its own work.
 quote :: String -> String
-quote s = "\"" <> s <> "\""
+quote s = "\"" <> escape s <> "\""
+  where
+  escape =
+    replaceAll (Pattern "\\") (Replacement "\\\\")
+      >>> replaceAll (Pattern "\"") (Replacement "\\\"")
 
 -- | Nothing at all when a label says no more than the id does. A machine whose
 -- | events are called `record` and labelled `record` should not have to look at
