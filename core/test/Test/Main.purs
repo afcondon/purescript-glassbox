@@ -45,6 +45,7 @@ import Test.Unit.Commands (commandUnits)
 import Test.Unit.Edges (edgeUnits)
 import Test.Unit.DSL (dslUnits, roundTripsMachine)
 import Test.Unit.Export (exportUnits)
+import Test.Unit.Lint (lintUnits)
 import Test.Unit.Run (runUnits)
 
 -- =============================================================================
@@ -470,6 +471,7 @@ main = do
     , codecUnits
     , commandUnits
     , exportUnits
+    , lintUnits
     , properties
     ]
   let results = join groups

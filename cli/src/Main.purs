@@ -17,10 +17,10 @@ module Glassbox.CLI (main) where
 
 import Prelude
 
-import Data.Array (drop, filter, mapMaybe, sort)
+import Data.Array (drop, filter, length, mapMaybe, null, sort)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Foldable (for_)
+import Data.Foldable (for_, or)
 import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), split, stripSuffix)
 import Data.Traversable (traverse)
@@ -30,6 +30,7 @@ import Effect.Console (error, log)
 import Glassbox.Codec.JSON (parseSpec)
 import Glassbox.DSL.Print (renderAll)
 import Glassbox.Export.PureScript (vocabularyModule)
+import Glassbox.Lint (explain, lint, rejections, warnings)
 import Glassbox.Spec (Spec)
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (permsAll)
@@ -41,6 +42,7 @@ main :: Effect Unit
 main = do
   args <- argv
   case drop2 args of
+    [ "lint", inDir ] -> lintCmd inDir
     [ "render-all", inDir, outDir ] -> renderAllCmd inDir outDir
     [ "vocabulary", inDir, outDir, prefix ] ->
       vocabularyCmd inDir outDir prefix defaultRegenerate
@@ -51,6 +53,9 @@ main = do
 usage :: Effect Unit
 usage = do
   error "glassbox-cli — write out what Glassbox prints of a machine"
+  error ""
+  error "  lint <machines-dir>"
+  error "      the correctness lints. Exit 1 if anything is rejected."
   error ""
   error "  render-all <machines-dir> <out-dir>"
   error "      every machine in every candidate syntax (Blocks, Table)"
@@ -68,6 +73,28 @@ drop2 :: Array String -> Array String
 drop2 = drop 2
 
 -- ---------------------------------------------------------------------------
+
+-- | Report every finding for every machine, and fail the process if any
+-- | artifact would be refused. Nothing is silent: a machine that passes says
+-- | so, because "no output" and "not run" look identical in a build log.
+lintCmd :: FilePath -> Effect Unit
+lintCmd inDir = do
+  machines <- readMachines inDir
+  bad <- traverse report machines
+  when (or bad) (setExitCode 1)
+  where
+  report { name, spec } = do
+    let found = lint spec
+        no = rejections found
+        yes = warnings found
+    if null found then do
+      log $ name <> ".json  clean"
+      pure false
+    else do
+      log $ name <> ".json  " <> show (length no) <> " rejected, "
+        <> show (length yes) <> " warned"
+      log (explain found)
+      pure (not (null no))
 
 renderAllCmd :: FilePath -> FilePath -> Effect Unit
 renderAllCmd inDir outDir = do

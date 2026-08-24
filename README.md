@@ -48,6 +48,7 @@ library's manifest. The CLI is where that IO lives, and it is as thin as
 reading, parsing, and writing allows:
 
 ```sh
+spago run -p glassbox-cli -- lint core/machines
 spago run -p glassbox-cli -- render-all core/machines core/machines/rendered
 spago run -p glassbox-cli -- vocabulary <machines> <out-dir> <module-prefix> [regen-command]
 ```
@@ -67,6 +68,7 @@ the runtime would itself accept.
 | `Glassbox.Codec.JSON` | the wire format: one bidirectional codec, versioned |
 | `Glassbox.DSL.Print` / `Glassbox.DSL.Parse` | the Blocks authoring syntax, printed and read back. `Table` is a second, read-only rendering |
 | `Glassbox.Export.StateDiagram` | one-way text export. Emits Mermaid's dialect because things render it for free; imports nothing and draws nothing |
+| `Glassbox.Lint` | the correctness lints that replace the compiler at the boundary. Rejections gate the boot; warnings do not |
 | `Glassbox.Export.PureScript` | one-way export of a machine's **alphabet** — its states and commands as rows — so a host can be exhaustive over them. Emits no transitions, so it cannot disagree with the artifact about behaviour |
 | `Glassbox.Draw` | *(glassbox-draw)* edges → `DataViz.Layout.StateMachine` |
 
