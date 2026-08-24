@@ -32,7 +32,7 @@ states, nothing was recompiled to add it, and no module here knows what
 a car radio is. If that ever stops being true the thesis has failed and
 everything else is decoration.
 
-## Why two packages
+## Why three packages
 
 The core has no dependency on any drawing library. Two consumers need it
 that way: a headless conformance runner comparing two implementations of
@@ -40,6 +40,22 @@ the format, and any host on a backend where a layout library is not
 available or not wanted. Running a machine and drawing one are different
 jobs — which is the whole point, since the same machine is meant to run
 under an arbitrary UI.
+
+`glassbox-cli` exists for the same reason one step further out. Every
+printer in the core is a **pure function** from a `Spec` to a string;
+none of them can write a file, so `effect` and `node-fs` stay out of the
+library's manifest. The CLI is where that IO lives, and it is as thin as
+reading, parsing, and writing allows:
+
+```sh
+spago run -p glassbox-cli -- render-all core/machines core/machines/rendered
+spago run -p glassbox-cli -- vocabulary <machines> <out-dir> <module-prefix> [regen-command]
+```
+
+`render-all` dumps every machine in every candidate syntax; `vocabulary`
+emits each machine's alphabet as a PureScript module of rows. Both read
+their input **through the codec**, so a tool can only describe a machine
+the runtime would itself accept.
 
 ## The modules
 
@@ -51,6 +67,7 @@ under an arbitrary UI.
 | `Glassbox.Codec.JSON` | the wire format: one bidirectional codec, versioned |
 | `Glassbox.DSL.Print` / `Glassbox.DSL.Parse` | the Blocks authoring syntax, printed and read back. `Table` is a second, read-only rendering |
 | `Glassbox.Export.StateDiagram` | one-way text export. Emits Mermaid's dialect because things render it for free; imports nothing and draws nothing |
+| `Glassbox.Export.PureScript` | one-way export of a machine's **alphabet** — its states and commands as rows — so a host can be exhaustive over them. Emits no transitions, so it cannot disagree with the artifact about behaviour |
 | `Glassbox.Draw` | *(glassbox-draw)* edges → `DataViz.Layout.StateMachine` |
 
 ## The four vocabularies

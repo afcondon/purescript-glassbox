@@ -1,6 +1,6 @@
 -- | Test.Unit.Export
 -- |
--- | `Glassbox.Export.StateDiagram`.
+-- | `Glassbox.Export.StateDiagram` and `Glassbox.Export.PureScript`.
 -- |
 -- | The module's own justification is that it is a **second opinion**: if the
 -- | picture and this text disagree, one of the two readings is wrong. That is
@@ -17,14 +17,16 @@ import Prelude
 
 import Data.Array (any, filter, head, length)
 import Data.Maybe (Maybe(..))
+import Data.Tuple (Tuple(..), snd)
 import Data.String (contains)
 import Data.String.Common (split)
 import Data.String.Pattern (Pattern(..))
 import Effect (Effect)
 import Glassbox.Edges (EdgeKind(..), defaultOptions, edgesOf)
+import Glassbox.Export.PureScript (moduleNameFor, vocabularyModule)
 import Glassbox.Export.StateDiagram (toStateDiagram)
 import Glassbox.Run (worldFrom)
-import Glassbox.Spec (EventSource(..), Expr(..), Spec, Value(..))
+import Glassbox.Spec (CommandId(..), EventSource(..), Expr(..), Spec, Value(..))
 import Test.Fixture (always, blank, edge, eid, finalSt, refusal, refuse, sid, st, to)
 import Test.Harness (check, section)
 
@@ -118,6 +120,54 @@ exportUnits = do
   p <- check "a machine with nothing in it is still a valid, empty diagram"
     (toStateDiagram unlabelled [] == "stateDiagram-v2")
 
-  pure [ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p ]
+  section "Export.PureScript"
+
+  let
+    vocab = blank
+      { id = "car-radio"
+      , states = [ st "off", st "seeking", st "locked" ]
+      , commands =
+          [ { id: CommandId "start-scan", label: "Start scanning" }
+          , { id: CommandId "stop-scan", label: "Stop scanning" }
+          ]
+      }
+    settings =
+      { modulePrefix: "Demo.Vocabulary"
+      , sourcePath: "machines/car-radio.json"
+      , regenerateWith: "make vocabulary"
+      }
+    Tuple file source = vocabularyModule settings vocab
+    said needle = contains (Pattern needle) source
+
+  q <- check "a kebab-case machine id becomes a PureScript module name"
+    (moduleNameFor vocab == "CarRadio" && file == "CarRadio.purs")
+  r <- check "the module is declared under the prefix it was given"
+    (said "module Demo.Vocabulary.CarRadio")
+  s' <- check "the header repeats the caller's own regenerate command, not ours"
+    (said "`make vocabulary`" && not (said "glassbox-cli"))
+
+  -- The rows are the whole product. Sorted, because regenerating an unchanged
+  -- machine has to be a no-op in the diff rather than a reordering.
+  t <- check "states become a sorted row of Unit"
+    ( said "type Phase :: Row Type"
+        && said "  ( \"locked\" :: Unit\n  , \"off\" :: Unit\n  , \"seeking\" :: Unit\n  )"
+    )
+  u <- check "the same states become a row of handlers, for annotating a match"
+    (said "type Cases :: Type -> Row Type" && said "  ( \"locked\" :: Unit -> b")
+  v <- check "commands become their own row, parameterised by the value type"
+    ( said "type Commands :: Type -> Row Type"
+        && said "  ( \"start-scan\" :: v\n  , \"stop-scan\" :: v\n  )"
+    )
+
+  -- Nothing about behaviour may appear. This is the property that makes
+  -- generating the alphabet different in kind from generating the machine.
+  w <- check "no transition, guard, refusal or initial state reaches the output"
+    (not (said "seeking") || not (said "-->"))
+  x <- check "a machine with no commands still emits a well-formed empty row"
+    ( contains (Pattern "type Commands :: Type -> Row Type\ntype Commands v =\n  ()")
+        (snd (vocabularyModule settings (vocab { commands = [] })))
+    )
+
+  pure [ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s', t, u, v, w, x ]
   where
   unlabelled = blank { states = [], events = [] }

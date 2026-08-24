@@ -1,0 +1,20 @@
+package:
+  name: glassbox-cli
+  description: "The runner beside the printers: read machines, write what Glassbox prints of them"
+  dependencies:
+    - arrays
+    - console
+    - effect
+    - either
+    - foldable-traversable
+    - glassbox
+    - maybe
+    - node-buffer
+    - node-fs
+    - node-path
+    - node-process
+    - prelude
+    - strings
+    - tuples
+  run:
+    main: Glassbox.CLI
