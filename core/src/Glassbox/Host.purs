@@ -44,19 +44,23 @@ module Glassbox.Host
   , reportStates
   , reportEvents
   , reportRefusals
+  , reportClock
   ) where
 
 import Prelude
 
-import Data.Array (cons, difference, null)
+import Data.Array (cons, difference, elem, null)
 import Data.Maybe (Maybe(..))
+import Data.String (joinWith)
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Variant (Variant)
 import Data.Variant as V
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import Glassbox.Spec
-  ( CommandId(..)
+  ( Clock
+  , clockName
+  , CommandId(..)
   , EventId(..)
   , RefusalId(..)
   , Spec
@@ -264,3 +268,27 @@ reportRefusals
   :: forall r rl. RowToList r rl => Labels rl => Proxy r -> Spec -> VocabularyReport
 reportRefusals proxy spec =
   reportAgainst proxy (map (\(RefusalId r) -> r) (map _.id spec.refusals))
+
+-- | Can this host run this machine's deadlines? `Nothing` if so.
+-- |
+-- | The fifth vocabulary, and the one whose absence is hardest to notice. A
+-- | host with no timer supplies `arm = \_ -> pure unit`, which is exactly right
+-- | for a machine with no deadlines and **silently wrong** for one with them:
+-- | the state is entered, the alarm is computed, and nothing ever fires it. No
+-- | type error, no missing case, no runtime complaint — just a machine that
+-- | stops.
+-- |
+-- | So a host declares the clocks it owns, `[]` meaning it has no timer at all,
+-- | and finds out at load rather than at the first deadline that never came.
+reportClock :: Array Clock -> Spec -> Maybe String
+reportClock owned spec
+  | null spec.deadlines = Nothing
+  | otherwise = case spec.clock of
+      Nothing -> Just "the machine has deadlines but declares no clock"
+      Just c
+        | elem c owned -> Nothing
+        | otherwise -> Just
+            ( "the machine keeps time in " <> clockName c
+                <> ", and this host owns "
+                <> (if null owned then "no clock at all" else joinWith ", " (map clockName owned))
+            )

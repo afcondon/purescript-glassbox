@@ -26,13 +26,16 @@ import Glassbox.Host
   , event
   , reifyTag
   , reportCommands
+  , reportClock
   , reportEvents
   , reportRefusals
   , reportStates
   , vocabularyOf
   )
-import Glassbox.Spec (CommandId(..), EventId(..), Spec, commandIds)
-import Test.Fixture (blank, command, ev, refusal, st)
+import Data.String (contains)
+import Data.String.Pattern (Pattern(..))
+import Glassbox.Spec (Clock(..), CommandId(..), EventId(..), Expr(..), Spec, Value(..), commandIds)
+import Test.Fixture (blank, command, ev, refusal, sid, st)
 import Test.Harness (check, section)
 import Type.Proxy (Proxy(..))
 
@@ -131,4 +134,22 @@ hostUnits = do
   n <- check "and the spec's own command list is what it is compared against"
     (map (\(CommandId raw) -> raw) (commandIds spec) == [ "light-lamp", "hum" ])
 
-  pure [ a, b, c, d, e, f, g, h, i, j, k, l, m, n ]
+  -- The fifth vocabulary, and the one whose absence is hardest to notice: a
+  -- host with no timer supplies a no-op `arm`, which is right for a machine
+  -- with no deadlines and silently wrong for one with them.
+  let
+    ticking = spec
+      { clock = Just Seconds
+      , deadlines = [ { inState: sid "on", fires: EventId "flip", after: Lit (VNumber 5.0) } ]
+      }
+
+  o <- check "a machine with no deadlines needs no clock from its host"
+    (reportClock [] spec == Nothing)
+  p <- check "a host with no timer is told so, rather than swallowing the deadline"
+    (map (contains (Pattern "no clock at all")) (reportClock [] ticking) == Just true)
+  q <- check "a host that owns the wrong clock is told which it has"
+    (map (contains (Pattern "keeps time in seconds")) (reportClock [ Beats ] ticking) == Just true)
+  r <- check "and a host that owns the right one may proceed"
+    (reportClock [ Milliseconds, Seconds, Minutes ] ticking == Nothing)
+
+  pure [ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r ]
