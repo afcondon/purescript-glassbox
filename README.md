@@ -53,10 +53,16 @@ spago run -p glassbox-cli -- render-all core/machines core/machines/rendered
 spago run -p glassbox-cli -- vocabulary <machines> <out-dir> <module-prefix> [regen-command]
 ```
 
-`render-all` dumps every machine in every candidate syntax; `vocabulary`
-emits each machine's alphabet as a PureScript module of rows. Both read
-their input **through the codec**, so a tool can only describe a machine
-the runtime would itself accept.
+`render-all` dumps every machine in every candidate syntax **and as a
+state diagram**; `vocabulary` emits each machine's alphabet as a
+PureScript module of rows. Both read their input **through the codec**, so
+a tool can only describe a machine the runtime would itself accept.
+
+The diagram is written out for a reason worth naming: it had no output
+anywhere, so nothing was in a position to disagree with the module whose
+whole justification is being a second opinion — and it spent a year
+emitting kebab-case identifiers, which are a parse error in the dialect it
+targets. A printer nobody can see is a printer nobody checks.
 
 ## The modules
 
@@ -64,6 +70,10 @@ the runtime would itself accept.
 |---|---|
 | `Glassbox.Spec` | the decoded machine — all data, no functions |
 | `Glassbox.Run` | the runtime: a pure function of (world, state, event) |
+| `Glassbox.Drive` | the driver: what a host does with that function. Runs in `Monad m` and nothing else |
+| `Glassbox.Host` | the half of the seam a compiler can check — rows, reports, and the one place a string becomes a member of one |
+| `Glassbox.Drive` | the driver: what a host does with that function. Runs in `Monad m` and nothing else |
+| `Glassbox.Host` | the half of the seam a compiler can check — rows, reports, and the one place a string becomes a member of one |
 | `Glassbox.Edges` | the edge set, derived by resolving every pair under a world |
 | `Glassbox.Codec.JSON` | the wire format: one bidirectional codec, versioned |
 | `Glassbox.DSL.Print` / `Glassbox.DSL.Parse` | the Blocks authoring syntax, printed and read back. `Table` is a second, read-only rendering |
@@ -72,7 +82,38 @@ the runtime would itself accept.
 | `Glassbox.Export.PureScript` | one-way export of a machine's **alphabet** — its states and commands as rows — so a host can be exhaustive over them. Emits no transitions, so it cannot disagree with the artifact about behaviour |
 | `Glassbox.Draw` | *(glassbox-draw)* edges → `DataViz.Layout.StateMachine` |
 
-## The four vocabularies
+## Running one: the six answers
+
+`Glassbox.Drive` asks a host six questions and imposes `Monad m` and
+nothing else — no `MonadState`, no effect system, no UI:
+
+```purescript
+type Wiring m =
+  { spec    :: Spec
+  , phase   :: m StateId            -- where you keep it
+  , move    :: StateId -> m Unit
+  , world   :: m World              -- what you can tell it
+  , perform :: CommandId -> m (Maybe EventId)
+  , refused :: RefusalId -> m Unit
+  , fork    :: m Unit -> m Unit     -- how not to block
+  , arm     :: Maybe Alarm -> m Unit
+  }
+```
+
+They are fields rather than constraints because the point of the artifact
+is that the *same* machine runs in places that do not resemble each other,
+and a driver that only ran under one effect system would concede the
+argument at the last step. `Test.Unit.Drive` drives a machine in `State`
+with `fork = identity`; that module existing is the proof.
+
+`perform` answers with an **event, not a result** — completion is an event,
+which is what keeps a failure arm in the enumeration where a lint can see
+it, instead of in a callback where it can be forgotten. `fork` is what makes
+an update optimistic and is visibly the host's choice. `arm` is called on
+every state change, so *leaving a state cancels its deadline* is a rule of
+the driver rather than something each host has to remember.
+
+## The five vocabularies
 
 Owned by different people, and the distinction is load-bearing.
 
@@ -86,7 +127,15 @@ a closed list too, and they are the contract with the host: it can read
 them at load time and say up front which it cannot honour.
 
 Config versus parameter has a mechanical test, not a judgement call:
-*does the diagram change when you change it?*
+*does the diagram change when you change it?* That test is also why the
+derived edge set enumerates every assignment of the **facts** and takes
+config at its declared value: config decides which machine this is, and a
+fact is transient. Assuming an unreported fact false instead used to drop
+guarded transitions out of the picture entirely. That test is why the derived
+edge set enumerates every assignment of the **facts** and takes config at
+its declared value: config decides which machine this is, and a fact is
+transient. Assuming an unreported fact false instead used to drop guarded
+transitions out of the picture entirely.
 
 ## The rule a designer has to know
 
@@ -145,14 +194,16 @@ better for it.
 arrived by* cannot be said. Shipping both shapes at once is how a format
 becomes unreadable; this one waits for an application that needs it.
 
-**Correctness lints.** Making the machine data gave up the
-exhaustiveness a `case` expression provided; nothing has yet bought it
-back. A `loop.json` missing a (state, event) pair loads and silently
-stays put.
-
 **Composition.** A real boiler serves heating and hot water as
 independent circuits. Two machines sharing a resource cannot be said in
 this format.
+
+**A history state.** A machine has no memory, so a state cannot return
+whence it came. Three independent machines have now wanted it — the
+looper's pause/resume, and Bosun's `reloading`, which cannot know whether
+it was entered from `held` or `raised`. Each time the honest workaround
+has been to narrow the machine rather than widen the format, and each time
+that has been defensible; it will not always be.
 
 ## Three surfaces, one value
 
@@ -168,6 +219,23 @@ but need not recover `s.rules` in the same array order, because the
 printer groups events that share a case list. What holds instead, and is
 what matters for a file in git, is that printing is **idempotent through
 a parse** — an author's file is stable once written.
+
+## Timing
+
+`after` is a bare quantity, and the machine declares the **clock** it is
+counted in — `milliseconds`, `seconds`, `minutes`, `beats`, `frames`.
+Before that existed, the only record of what the number meant was the
+spelling of a config key (`boost-minutes`, `count-in-beats`), and the
+corpus was already running three units across four machines on that basis.
+The timing lint refuses a machine with deadlines and no clock, and refuses
+two deadlines on one state — the runtime runs the first and the printer
+prints them all.
+
+`millisecondsPer` converts the three wall-clock units and answers `Nothing`
+for `beats` and `frames`, which is the honest answer: a beat is not a
+duration until somebody says what the tempo is. The question parked behind
+that `Nothing` — when the tempo changes while a state is pending, does the
+deadline move? — is deliberately open until a musical host needs it.
 
 ## Tests
 
