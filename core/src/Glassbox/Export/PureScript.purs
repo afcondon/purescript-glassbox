@@ -39,7 +39,7 @@ import Data.String (joinWith)
 import Data.String.CodeUnits (singleton, toCharArray, uncons) as CU
 import Data.String.Common (toUpper)
 import Data.Tuple (Tuple(..))
-import Glassbox.Spec (CommandId(..), Spec, StateId(..), commandIds, stateIds, versionFor)
+import Glassbox.Spec (CommandId(..), EventId(..), RefusalId(..), Spec, StateId(..), commandIds, eventIds, stateIds, versionFor)
 
 -- | What the printer cannot work out for itself.
 -- |
@@ -79,7 +79,9 @@ vocabularyModule v spec = Tuple (name <> ".purs") contents
   where
   name = moduleNameFor spec
   states = map (\(StateId s) -> s) (stateIds spec)
+  events = map (\(EventId e) -> e) (eventIds spec)
   commands = map (\(CommandId c) -> c) (commandIds spec)
+  refusals = map (\(RefusalId r) -> r) (map _.id spec.refusals)
 
   contents = joinWith "\n"
     [ "-- | GENERATED FILE — do not edit."
@@ -98,9 +100,14 @@ vocabularyModule v spec = Tuple (name <> ".purs") contents
     , "module " <> v.modulePrefix <> "." <> name
     , "  ( Phase"
     , "  , Cases"
+    , "  , Events"
     , "  , Commands"
+    , "  , Refusals"
+    , "  , Excuses"
     , "  , phases"
+    , "  , events"
     , "  , commands"
+    , "  , refusals"
     , "  ) where"
     , ""
     , "import Prelude (Unit)"
@@ -124,16 +131,43 @@ vocabularyModule v spec = Tuple (name <> ".purs") contents
     , "type Cases b ="
     , row states "Unit -> b"
     , ""
+    , "-- | The events this machine will answer to."
+    , "-- |"
+    , "-- | A host that names an event through this row cannot send one the"
+    , "-- | machine has never heard of — which a bare `EventId` could not prevent,"
+    , "-- | because every misspelling is a perfectly good string."
+    , "type Events :: Row Type"
+    , "type Events ="
+    , row events "Unit"
+    , ""
     , "-- | The commands this machine can ask its host to carry out."
     , "type Commands :: Type -> Row Type"
     , "type Commands v ="
     , row commands "v"
     , ""
+    , "-- | The refusals this machine can answer with."
+    , "type Refusals :: Row Type"
+    , "type Refusals ="
+    , row refusals "Unit"
+    , ""
+    , "-- | The same refusals as a row of handlers, so a host must say what each"
+    , "-- | one means. A refusal that reaches nobody is the failure the"
+    , "-- | Stay/Refuse distinction exists to prevent."
+    , "type Excuses :: Type -> Row Type"
+    , "type Excuses b ="
+    , row refusals "Unit -> b"
+    , ""
     , "phases :: Proxy Phase"
     , "phases = Proxy"
     , ""
+    , "events :: Proxy Events"
+    , "events = Proxy"
+    , ""
     , "commands :: Proxy (Commands Unit)"
     , "commands = Proxy"
+    , ""
+    , "refusals :: Proxy Refusals"
+    , "refusals = Proxy"
     , ""
     ]
 

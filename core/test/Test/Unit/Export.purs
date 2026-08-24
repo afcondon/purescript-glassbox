@@ -27,7 +27,7 @@ import Glassbox.Export.PureScript (moduleNameFor, vocabularyModule)
 import Glassbox.Export.StateDiagram (toStateDiagram)
 import Glassbox.Run (worldFrom)
 import Glassbox.Spec (CommandId(..), EventSource(..), Expr(..), Spec, Value(..))
-import Test.Fixture (always, blank, edge, eid, finalSt, refusal, refuse, sid, st, to)
+import Test.Fixture (always, blank, edge, eid, ev, finalSt, refusal, refuse, sid, st, to)
 import Test.Harness (check, section)
 
 -- | Labels chosen to be awkward: two of them carry the notation's one
@@ -126,6 +126,8 @@ exportUnits = do
     vocab = blank
       { id = "car-radio"
       , states = [ st "off", st "seeking", st "locked" ]
+      , events = [ ev "scan" ]
+      , refusals = [ refusal "no-disc" "there is no disc" ]
       , commands =
           [ { id: CommandId "start-scan", label: "Start scanning" }
           , { id: CommandId "stop-scan", label: "Stop scanning" }
@@ -159,6 +161,17 @@ exportUnits = do
         && said "  ( \"start-scan\" :: v\n  , \"stop-scan\" :: v\n  )"
     )
 
+  -- Both directions of the seam, not just the one the machine speaks. A host
+  -- naming an event through `Events` cannot send one the machine never
+  -- declared, which a bare `EventId` could never prevent.
+  v2 <- check "events become a row, so a host cannot invent one"
+    (said "type Events :: Row Type" && said "  ( \"scan\" :: Unit\n  )")
+  v3 <- check "refusals become a row, and a row of handlers to answer them"
+    ( said "type Refusals :: Row Type"
+        && said "type Excuses :: Type -> Row Type"
+        && said "  ( \"no-disc\" :: Unit -> b\n  )"
+    )
+
   -- Nothing about behaviour may appear. This is the property that makes
   -- generating the alphabet different in kind from generating the machine.
   w <- check "no transition, guard, refusal or initial state reaches the output"
@@ -168,6 +181,6 @@ exportUnits = do
         (snd (vocabularyModule settings (vocab { commands = [] })))
     )
 
-  pure [ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s', t, u, v, w, x ]
+  pure [ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s', t, u, v, v2, v3, w, x ]
   where
   unlabelled = blank { states = [], events = [] }
