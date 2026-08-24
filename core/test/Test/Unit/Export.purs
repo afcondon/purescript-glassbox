@@ -15,19 +15,19 @@ module Test.Unit.Export
 
 import Prelude
 
-import Data.Array (any, filter, head, length)
-import Data.Maybe (Maybe(..))
+import Data.Array (any, drop, filter, head, length)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (Tuple(..), snd)
 import Data.String (contains)
-import Data.String.Common (split)
-import Data.String.Pattern (Pattern(..))
+import Data.String.Common (replaceAll, split)
+import Data.String.Pattern (Pattern(..), Replacement(..))
 import Effect (Effect)
 import Glassbox.Edges (EdgeKind(..), defaultOptions, edgesOf)
 import Glassbox.Export.PureScript (moduleNameFor, vocabularyModule)
 import Glassbox.Export.StateDiagram (toStateDiagram)
 import Glassbox.Run (worldFrom)
 import Glassbox.Spec (CommandId(..), EventSource(..), Expr(..), Spec, Value(..))
-import Test.Fixture (always, blank, edge, eid, ev, finalSt, refusal, refuse, sid, st, to)
+import Test.Fixture (always, blank, command, doing, edge, eid, ev, finalSt, refusal, refuse, sid, st, to)
 import Test.Harness (check, section)
 
 -- | Labels chosen to be awkward: two of them carry the notation's one
@@ -120,6 +120,66 @@ exportUnits = do
   p <- check "a machine with nothing in it is still a valid, empty diagram"
     (toStateDiagram unlabelled [] == "stateDiagram-v2")
 
+  -- The bug this module shipped with for a year, and the reason it survived:
+  -- the dialect's identifiers are not ours. A kebab-case id is a PARSE ERROR in
+  -- stateDiagram-v2, so a real machine — every one in the corpus is full of
+  -- them — exported to something that rendered as nothing at all. Verified
+  -- against Mermaid 11.17 in both directions: the old output fails to parse at
+  -- exactly the hyphen, and all five machines now parse.
+  let
+    kebab = blank
+      { id = "kebab"
+      , initial = sid "not-following"
+      , states =
+          [ (st "not-following") { label = "Not following" }
+          , (doing "following-pending" [ "send-follow" ] [ "cancel" ]) { label = "Following..." }
+          ]
+      , events = [ ev "press" ]
+      , commands = [ command "send-follow", command "cancel" ]
+      , rules = [ { from: sid "not-following", on: eid "press", cases: [ to always "following-pending" ] } ]
+      }
+    kebabText = toStateDiagram kebab (edgesOf defaultOptions (worldFrom kebab) kebab)
+    kebabSaid n = contains (Pattern n) kebabText
+
+  p2 <- check "a hyphen in a state id becomes an underscore, because the dialect forbids it"
+    (kebabSaid "    not_following : Not following" && not (kebabSaid "not-following :"))
+  p3 <- check "and the arrows use the same substituted name, or they name nothing"
+    (kebabSaid "    not_following --> following_pending : press")
+  p4 <- check "the initial marker is substituted too"
+    (kebabSaid "    [*] --> not_following")
+  -- The identifier POSITIONS specifically: `-->` is a hyphen the dialect wants,
+  -- and a label may say what it likes. What may not carry one is a name.
+  p5 <- check "no identifier position carries a hyphen, whatever the labels do"
+    ( not
+        ( any (contains (Pattern "-"))
+            (map names (drop 1 (split (Pattern "\n") kebabText)))
+        )
+    )
+
+  -- Commands hang off states in this format, so a diagram drawing only arrows
+  -- is a second opinion about half the machine.
+  p6 <- check "a state's entry and exit commands appear on its own line"
+    (kebabSaid "following_pending : Following...  (entry send-follow, exit cancel)")
+  p7 <- check "and a state that commands nothing gains no parenthesis"
+    (kebabSaid "not_following : Not following\n")
+
+  -- Sanitising is not injective, and two states merging into one is a diagram
+  -- that is not wrong-looking, merely wrong.
+  let
+    collide = blank
+      { id = "collide"
+      , initial = sid "hot-water"
+      , states = [ st "hot-water", st "hot_water" ]
+      , events = []
+      , rules = []
+      }
+    collideText = toStateDiagram collide (edgesOf defaultOptions (worldFrom collide) collide)
+
+  p8 <- check "two ids that would sanitise the same are kept apart"
+    ( contains (Pattern "hot_water_0 :") collideText
+        && contains (Pattern "hot_water_1 :") collideText
+    )
+
   section "Export.PureScript"
 
   let
@@ -181,6 +241,12 @@ exportUnits = do
         (snd (vocabularyModule settings (vocab { commands = [] })))
     )
 
-  pure [ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s', t, u, v, v2, v3, w, x ]
+  pure [ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, p2, p3, p4, p5, p6, p7, p8, q, r, s', t, u, v, v2, v3, w, x ]
   where
   unlabelled = blank { states = [], events = [] }
+
+  -- The identifiers on one line: everything left of the label separator, with
+  -- the dialect's own punctuation taken out.
+  names line =
+    replaceAll (Pattern "[*]") (Replacement "")
+      (replaceAll (Pattern "-->") (Replacement "") (fromMaybe line (head (split (Pattern " : ") line))))

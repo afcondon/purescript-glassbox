@@ -29,6 +29,9 @@ import Effect (Effect)
 import Effect.Console (error, log)
 import Glassbox.Codec.JSON (parseSpec)
 import Glassbox.DSL.Print (renderAll)
+import Glassbox.Edges (defaultOptions, edgesOf)
+import Glassbox.Export.StateDiagram (toStateDiagram)
+import Glassbox.Run (worldFrom)
 import Glassbox.Export.PureScript (vocabularyModule)
 import Glassbox.Lint (explain, lint, rejections, warnings)
 import Glassbox.Spec (Spec)
@@ -58,7 +61,7 @@ usage = do
   error "      the correctness lints. Exit 1 if anything is rejected."
   error ""
   error "  render-all <machines-dir> <out-dir>"
-  error "      every machine in every candidate syntax (Blocks, Table)"
+  error "      every machine in every candidate syntax (Blocks, Table) and as a state diagram"
   error ""
   error "  vocabulary <machines-dir> <out-dir> <module-prefix> [regen-command]"
   error "      each machine's alphabet as a PureScript module of rows."
@@ -100,7 +103,21 @@ renderAllCmd :: FilePath -> FilePath -> Effect Unit
 renderAllCmd inDir outDir = do
   machines <- readMachines inDir
   ensureDir outDir
-  for_ (renderAll (map (\{ name, spec } -> Tuple name spec) machines)) \(Tuple file content) -> do
+  let
+    -- The state diagram is emitted HERE rather than by `Print.renderAll`
+    -- because it is derived from the edge set rather than from the Spec, and
+    -- because it is an export rather than a syntax — it does not read back.
+    --
+    -- Until now it was emitted nowhere at all, and that is the whole reason a
+    -- fatal bug in it survived: the module's justification is being a second
+    -- opinion, and nothing was ever in a position to disagree with it. A
+    -- printer with no output on disk is a printer nobody checks.
+    diagrams = map
+      ( \{ name, spec } -> Tuple (name <> ".mermaid.txt")
+          (toStateDiagram spec (edgesOf defaultOptions (worldFrom spec) spec))
+      )
+      machines
+  for_ (renderAll (map (\{ name, spec } -> Tuple name spec) machines) <> diagrams) \(Tuple file content) -> do
     writeTextFile UTF8 (concat [ outDir, file ]) content
     log $ file <> "  " <> show (lines content) <> " lines"
 
