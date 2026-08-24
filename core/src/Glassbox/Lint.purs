@@ -105,6 +105,7 @@ lint spec =
     <> totality spec
     <> vocabulary spec
     <> overlap spec
+    <> timing spec
     <> reachability spec
 
 rejections :: Array Finding -> Array Finding
@@ -313,6 +314,54 @@ reachability spec = map unreachable (filter (\s -> not (s `elem` seen)) (stateId
 
   unreachable s = warn "reachability"
     (quoteState s <> " cannot be reached from " <> quoteState spec.initial)
+
+-- ---------------------------------------------------------------------------
+-- timing — a deadline that means something, and only one of them per state
+-- ---------------------------------------------------------------------------
+--
+-- Both rejections, and both about a number that quietly means the wrong thing
+-- rather than a name that does not resolve.
+--
+-- `after` is a bare quantity, and before the clock was declared the only record
+-- of what it meant was the *spelling of a config key* — `boost-minutes`,
+-- `count-in-beats`. The corpus was already carrying three units across four
+-- machines on that basis, so a host feeding seconds turned a one-hour boost
+-- into a one-minute one and nothing anywhere could complain. Declaring the
+-- clock only helps if omitting it is refused.
+--
+-- The second is subtler and was found by reading rather than by failing: the
+-- runtime's `deadlineFor` takes the FIRST deadline for a state, while the
+-- Blocks printer prints them all. So an artifact with two round-trips showing
+-- both and runs only one — the printer and the runtime disagreeing about the
+-- same value, which is precisely the failure this format exists to prevent.
+-- Rejecting the pair is better than picking a winner, because there is no
+-- reading of two deadlines on one state that is obviously right.
+
+timing :: Spec -> Array Finding
+timing spec = catMaybes (cons clockDeclared duplicates)
+  where
+  clockDeclared =
+    if null spec.deadlines || not (isNothing spec.clock) then Nothing
+    else Just
+      ( reject "timing"
+          ( "this machine has "
+              <> show (length spec.deadlines)
+              <> " deadline(s) but declares no clock, so `after` is a number with no unit"
+          )
+      )
+
+  duplicates = map tooMany (repeated (map _.inState spec.deadlines))
+
+  tooMany sid = Just
+    ( reject "timing"
+        ( quoteState sid
+            <> " has more than one deadline; the runtime would run the first and silently drop the rest"
+        )
+    )
+
+-- | The values that occur more than once, each named once.
+repeated :: forall a. Ord a => Array a -> Array a
+repeated xs = nub (filter (\x -> length (filter (eq x) xs) > 1) xs)
 
 -- ---------------------------------------------------------------------------
 

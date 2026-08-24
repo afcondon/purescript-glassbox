@@ -51,6 +51,8 @@ import Data.String.CodeUnits (fromCharArray)
 import Data.Tuple (Tuple(..))
 import Glassbox.Spec
   ( Case
+  , Clock
+  , clockFromName
   , CmpOp(..)
   , CommandDecl
   , CommandId(..)
@@ -191,6 +193,7 @@ document = do
   blanks
   Tuple id title <- machineLine
   version <- option 1 formatLine
+  clock <- optionMaybe clockLine
   initial <- initialLine
   decls <- declarationSections
   blocks <- many (stateBlock decls)
@@ -210,6 +213,7 @@ document = do
     , commands: decls.commands
     , rules: concat (map _.rules blocks)
     , deadlines: concat (map _.deadlines blocks)
+    , clock
     }
 
 -- | Fold what a block says about its own state back onto the declaration.
@@ -259,6 +263,19 @@ formatLine = try do
   eol
   blanks
   pure v
+
+-- | `clock seconds`. Sits with the header rather than beside the deadlines
+-- | because it governs all of them, and a per-deadline unit is exactly the
+-- | freedom that let the corpus mix three of them.
+clockLine :: Parser String Clock
+clockLine = try do
+  hspace
+  keyword "clock"
+  name <- ident
+  c <- maybe (fail ("not a clock this format knows: " <> name)) pure (clockFromName name)
+  eol
+  blanks
+  pure c
 
 initialLine :: Parser String StateId
 initialLine = do

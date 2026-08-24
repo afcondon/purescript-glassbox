@@ -72,6 +72,7 @@ import Glassbox.Spec
   , CommandId(..)
   , ConfigId(..)
   , Deadline
+  , clockName
   , EventId(..)
   , EventSource(..)
   , Expr(..)
@@ -309,6 +310,11 @@ quote s = "\"" <> escape s <> "\""
 labelPart :: String -> String -> String
 labelPart id label = if label == id then "" else quote label
 
+-- | Printed only when the machine declares one, so a machine with no deadlines
+-- | gains no line it has no use for.
+clockRow :: Spec -> Array Line
+clockRow spec = maybe [] (\c -> [ Cells [ "clock", clockName c ] ]) spec.clock
+
 deadlineText :: Ambiguous -> Deadline -> String
 deadlineText amb d =
   "after " <> exprText amb d.after <> " fires " <> rawEvent d.fires
@@ -382,11 +388,11 @@ printBlocks spec = finish (notesLines <> preamble <> declarations <> body)
     [] -> []
     ns -> map (\n -> if n == "" then "#" else "# " <> n) ns <> [ "" ]
 
-  preamble = layout ""
+  preamble = layout "" $
     [ Cells [ "machine", spec.id, quote spec.title ]
     , Cells [ "format", show (versionFor spec) ]
-    , Cells [ "initial", rawState spec.initial ]
-    ]
+    ] <> clockRow spec <>
+      [ Cells [ "initial", rawState spec.initial ] ]
 
   -- `final` and the deadlines are NOT here: they are on the state's own block
   -- header, where a reader is already looking. Saying a thing once is what keeps
@@ -510,12 +516,12 @@ printTable spec = finish (preamble <> declarations <> grid <> legend <> notesSec
   where
   amb = ambiguousIn spec
 
-  preamble = layout ""
+  preamble = layout "" $
     [ Cells [ "machine", spec.id ]
     , Cells [ "title", quote spec.title ]
     , Cells [ "format", show (versionFor spec) ]
-    , Cells [ "initial", rawState spec.initial ]
-    ]
+    ] <> clockRow spec <>
+      [ Cells [ "initial", rawState spec.initial ] ]
 
   -- Labels are unquoted here, unlike the other two syntaxes. In a column table
   -- the label is always the last field on the line, so a space in it is

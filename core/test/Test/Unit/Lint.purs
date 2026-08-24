@@ -24,7 +24,7 @@ import Data.String (contains)
 import Data.String.Pattern (Pattern(..))
 import Effect (Effect)
 import Glassbox.Lint (Severity(..), lint, accepts, rejections, warnings)
-import Glassbox.Spec (Outcome(..), Spec, StateId(..))
+import Glassbox.Spec (Clock(..), Expr(..), Outcome(..), Spec, StateId(..), Value(..))
 import Test.Fixture (always, blank, cid, command, doing, ev, refusal, refuse, sid, st, stay, to)
 import Test.Harness (check, section)
 
@@ -130,7 +130,44 @@ lintUnits = do
   l <- check "a machine with several holes reports all of them, not the first"
     (length (rejections (lint (sound { commands = [], refusals = [] }))) >= 2)
 
-  pure [ a, b, c, d, e, f, g, h, i, j, j2, k, l ]
+  -- timing. Both of these are about a NUMBER quietly meaning the wrong thing,
+  -- which is a different failure from a name that does not resolve, and the one
+  -- the corpus was actually carrying before the clock was declared.
+  let
+    timed = sound
+      { deadlines = [ { inState: sid "on", fires: sid' "poke", after: Lit (VNumber 3.0) } ] }
+
+  m <- check "a deadline with no declared clock is refused, because the number means nothing"
+    (rejectedBy "timing" "declares no clock" timed)
+  n <- check "and the same machine with a clock is fine"
+    (accepts (timed { clock = Just Seconds }))
+  o <- check "a clock on a machine with no deadlines is harmless, not an error"
+    (accepts (sound { clock = Just Beats }))
+
+  -- Found by reading rather than by failing: `deadlineFor` takes the first and
+  -- the Blocks printer prints them all, so two on one state is the printer and
+  -- the runtime disagreeing about the same value.
+  let
+    twice = timed
+      { clock = Just Seconds
+      , deadlines = timed.deadlines <>
+          [ { inState: sid "on", fires: sid' "flip", after: Lit (VNumber 9.0) } ]
+      }
+
+  p <- check "two deadlines on one state are refused rather than silently reduced to one"
+    (rejectedBy "timing" "`on` has more than one deadline" twice)
+  q <- check "and a machine with one deadline per state is not caught by that"
+    ( accepts
+        ( twice
+            { deadlines =
+                [ { inState: sid "on", fires: sid' "poke", after: Lit (VNumber 3.0) }
+                , { inState: sid "off", fires: sid' "flip", after: Lit (VNumber 9.0) }
+                ]
+            }
+        )
+    )
+
+  pure [ a, b, c, d, e, f, g, h, i, j, j2, k, l, m, n, o, p, q ]
   where
   sid' = (_.id) <<< ev
   drop1 xs = filter (\r -> not (r.from == sid "off" && r.on == sid' "flip")) xs

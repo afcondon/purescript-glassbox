@@ -23,13 +23,14 @@ import Prelude
 import Data.Array (length)
 import Data.Either (Either(..), either, hush, isLeft, isRight)
 import Data.Maybe (Maybe(..), isJust, maybe)
-import Data.String (contains)
-import Data.String.Pattern (Pattern(..))
+import Data.String (contains, replace)
+import Data.String.Pattern (Pattern(..), Replacement(..))
 import Effect (Effect)
 import Glassbox.Codec.JSON (decodeSpec, encodeSpec, parseSpec, printSpec)
 import Glassbox.Run (resolve, worldFrom, dueAt)
 import Glassbox.Spec
-  ( CmpOp(..)
+  ( Clock(..)
+  , CmpOp(..)
   , ConfigId(..)
   , EventId(..)
   , EventSource(..)
@@ -388,6 +389,10 @@ everything = blank
       , { from: sid "a", on: eid "tick", cases: [ to always "b" ] }
       ]
   , deadlines = [ { inState: sid "a", fires: eid "tick", after: ConfigOf (ConfigId "n") } ]
+  -- Minutes rather than seconds on purpose: it is the unit the corpus was
+  -- already using without saying so, and the one whose omission turned a
+  -- one-hour boost into a one-minute one.
+  , clock = Just Minutes
   }
 
 roundTripUnits :: Effect (Array Boolean)
@@ -413,7 +418,19 @@ roundTripUnits = do
   g <- check "an empty refusal tag list still round-trips"
     (parseSpec (printSpec (everything { refusals = [], rules = [] })) == Right (everything { refusals = [], rules = [] }))
 
-  pure [ a, b, c, d, e, f, g ]
+  -- The clock is a field the round-trip above already covers, so what is worth
+  -- pinning separately is the two ends: that it is really carried, and that a
+  -- machine with no deadlines gains no line it has no use for.
+  h <- check "the declared clock survives both round trips"
+    ( map _.clock (hush (decodeSpec (encodeSpec everything))) == Just (Just Minutes)
+        && map _.clock (hush (parseSpec (printSpec everything))) == Just (Just Minutes)
+    )
+  i <- check "a machine that declares no clock emits no clock key at all"
+    (not (contains (Pattern "clock") (printSpec (everything { deadlines = [], clock = Nothing }))))
+  j <- check "a clock the format does not know is refused, not defaulted"
+    (rejects (replace (Pattern "\"minutes\"") (Replacement "\"fortnights\"") (printSpec everything)))
+
+  pure [ a, b, c, d, e, f, g, h, i, j ]
 
 -- | Prose is content, not a comment the codec may discard.
 -- |

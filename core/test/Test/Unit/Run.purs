@@ -16,11 +16,13 @@ module Test.Unit.Run
 
 import Prelude
 
+import Data.Array (length)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Glassbox.Run
   ( World
+  , alarmFor
   , dueAt
   , evalExpr
   , evalGuard
@@ -34,7 +36,12 @@ import Glassbox.Run
   , worldFrom
   )
 import Glassbox.Spec
-  ( CmpOp(..)
+  ( Clock(..)
+  , clockFromName
+  , clockName
+  , everyClock
+  , millisecondsPer
+  , CmpOp(..)
   , ConfigId(..)
   , EventId(..)
   , Expr(..)
@@ -397,7 +404,36 @@ stepUnits = do
   j <- check "a state that does not exist is Nothing"
     (dueAt timed tw (sid "ghost") 0.0 == Nothing)
 
-  pure [ a, b, c, d, e, f, g, h, i, j ]
+  -- alarmFor is dueAt's replacement at the seam, and the difference is the
+  -- whole point: it hands back HOW LONG and IN WHAT, so the conversion into a
+  -- host's own clock happens once, where the unit is still in scope, instead
+  -- of being assumed at both ends of an addition.
+  let ticking = timed { clock = Just Seconds }
+
+  k <- check "an alarm is relative and carries the machine's clock"
+    ( alarmFor ticking tw (sid "a")
+        == Just { fires: EventId "go", after: 2.0, clock: Just Seconds }
+    )
+  l <- check "and reads the world for its quantity, exactly as dueAt does"
+    ( map _.after (alarmFor ticking (setConfig (ConfigId "wait") (VNumber 1.0) tw) (sid "b"))
+        == Just 1.0
+    )
+  m <- check "a state that asks for nothing asks for no alarm"
+    (alarmFor ordered base (sid "a") == Nothing)
+
+  -- The two clocks that do NOT convert are the honest part of the design: a
+  -- beat is not a duration until somebody says what the tempo is, and that is
+  -- not the machine's to know.
+  n <- check "wall-clock units convert to milliseconds; musical and display ones do not"
+    ( map millisecondsPer [ Milliseconds, Seconds, Minutes, Beats, Frames ]
+        == [ Just 1.0, Just 1000.0, Just 60000.0, Nothing, Nothing ]
+    )
+  o <- check "every clock the format knows is in everyClock, and round-trips its name"
+    ( length everyClock == 5
+        && map clockFromName (map clockName everyClock) == map Just everyClock
+    )
+
+  pure [ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o ]
 
 runUnits :: Effect (Array Boolean)
 runUnits = do

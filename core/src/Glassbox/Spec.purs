@@ -65,6 +65,11 @@ module Glassbox.Spec
   , Case
   , Rule
   , Deadline
+  , Clock(..)
+  , clockName
+  , clockFromName
+  , millisecondsPer
+  , everyClock
   , StateDecl
   , EventDecl
   , EventSource(..)
@@ -93,7 +98,7 @@ module Glassbox.Spec
 import Prelude
 
 import Data.Array (any, filter, find, head, null)
-import Data.Maybe (Maybe, maybe)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Number.Format (toString)
 
 -- | The newest wire format version this module understands.
@@ -297,6 +302,75 @@ type Deadline =
   , after :: Expr
   }
 
+-- | The unit a machine's deadlines are counted in.
+-- |
+-- | `after` is a bare number, and until this existed the only record of what
+-- | that number meant was the *spelling of a config key* — `boost-minutes`,
+-- | `count-in-beats`. Hungarian notation carrying the whole semantics of the
+-- | timing layer, and the corpus was already inconsistent: three units across
+-- | four machines, and a host feeding seconds turns a one-hour boost into a
+-- | one-minute one with nothing anywhere to complain.
+-- |
+-- | So it is declared, and it is a **closed** vocabulary rather than an opaque
+-- | string like a command, because a host cannot arm a timer in a unit it has
+-- | never heard of. That closedness is the difference between the two kinds of
+-- | vocabulary in this format, and it is decided by who has to understand the
+-- | word: the artifact's author names commands, and the format names clocks.
+data Clock
+  = Milliseconds
+  | Seconds
+  | Minutes
+  | Beats
+  | Frames
+
+derive instance eqClock :: Eq Clock
+derive instance ordClock :: Ord Clock
+
+-- | Every clock, so a host can be exhaustive over the list without importing
+-- | the constructors one at a time.
+everyClock :: Array Clock
+everyClock = [ Milliseconds, Seconds, Minutes, Beats, Frames ]
+
+clockName :: Clock -> String
+clockName = case _ of
+  Milliseconds -> "milliseconds"
+  Seconds -> "seconds"
+  Minutes -> "minutes"
+  Beats -> "beats"
+  Frames -> "frames"
+
+clockFromName :: String -> Maybe Clock
+clockFromName = case _ of
+  "milliseconds" -> Just Milliseconds
+  "seconds" -> Just Seconds
+  "minutes" -> Just Minutes
+  "beats" -> Just Beats
+  "frames" -> Just Frames
+  _ -> Nothing
+
+-- | How many milliseconds one unit of this clock is — when that is a fixed
+-- | quantity at all.
+-- |
+-- | `Nothing` is the interesting answer and it is not a gap: a beat is not a
+-- | duration until somebody says what the tempo is, and a frame is not one
+-- | until somebody says what the display does. Those rates are not the
+-- | machine's to know, so a host that owns only wall-clock time can accept the
+-- | first three **by construction** and refuse the rest at load, by name,
+-- | before anything runs.
+-- |
+-- | The genuinely open question sits behind the two `Nothing`s: when the tempo
+-- | changes while a state is pending, does the deadline move? Resolve-at-entry
+-- | and re-resolve-continuously are both defensible and audibly different, and
+-- | the format will have to say which it means. Deliberately parked until a
+-- | musical host needs it — see the plan.
+millisecondsPer :: Clock -> Maybe Number
+millisecondsPer = case _ of
+  Milliseconds -> Just 1.0
+  Seconds -> Just 1000.0
+  Minutes -> Just 60000.0
+  Beats -> Nothing
+  Frames -> Nothing
+
 -- =============================================================================
 -- Declarations
 -- =============================================================================
@@ -384,6 +458,9 @@ type Spec =
   , commands :: Array CommandDecl
   , rules :: Array Rule
   , deadlines :: Array Deadline
+  -- | Absent is legal only for a machine with no deadlines; the vocabulary
+  -- | lint rejects the combination that would otherwise mean nothing.
+  , clock :: Maybe Clock
   }
 
 -- =============================================================================

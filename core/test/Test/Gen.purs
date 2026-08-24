@@ -37,7 +37,7 @@ module Test.Gen
 
 import Prelude
 
-import Data.Array (catMaybes, take)
+import Data.Array (catMaybes, null, take)
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Int (toNumber)
@@ -49,6 +49,8 @@ import Glassbox.Edges (Edge, EdgeKind(..))
 import Glassbox.Run (World)
 import Glassbox.Spec
   ( Case
+  , Clock(..)
+  , everyClock
   , CmpOp(..)
   , CommandId(..)
   , ConfigId(..)
@@ -204,6 +206,11 @@ genSpec = do
   config <- traverse genConfigDecl configIds
   rules <- catMaybes <$> traverse (genRule vocab) (crossProduct stateIds eventIds)
   deadlines <- genDeadlines vocab
+  -- A clock is REQUIRED once there are deadlines and optional otherwise, which
+  -- is exactly what the vocabulary lint enforces. Generating the illegal
+  -- combination here would make every property fail for the same uninteresting
+  -- reason; `Test.Unit.Lint` pins the rejection directly instead.
+  someClock <- pick Seconds everyClock
   initial <- pick (StateId "s0") stateIds
   title <- pick "Generated" [ "Generated", "A title: with a colon", "" ]
 
@@ -222,6 +229,7 @@ genSpec = do
       , commands: map (\kid@(CommandId raw) -> { id: kid, label: "do " <> raw }) commandIds
       , rules
       , deadlines
+      , clock: if null deadlines then Nothing else Just someClock
       }
 
   -- Honest about itself. The structural round-trip property compares the whole

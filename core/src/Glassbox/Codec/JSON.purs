@@ -62,6 +62,7 @@ import Data.Codec as Codec
 import Data.Codec.Argonaut as CA
 import Data.Either (Either(..), note)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Foreign.Object as Object
 import Glassbox.Spec
@@ -72,6 +73,9 @@ import Glassbox.Spec
   , ConfigDecl
   , ConfigId(..)
   , Deadline
+  , Clock
+  , clockName
+  , clockFromName
   , EventDecl
   , EventId(..)
   , EventSource(..)
@@ -172,6 +176,12 @@ eventSourceCodec = CA.prismaticCodec "EventSource" from to CA.string
   to = case _ of
     FromUser -> "user"
     FromRuntime -> "runtime"
+
+-- | A clock the format does not know is a hard failure rather than a default,
+-- | for the same reason a future format version is: guessing produces a machine
+-- | that runs, and runs differently.
+clockCodec :: CA.JsonCodec Clock
+clockCodec = CA.prismaticCodec "Clock" clockFromName clockName CA.string
 
 cmpOpCodec :: CA.JsonCodec CmpOp
 cmpOpCodec = CA.prismaticCodec "CmpOp" from to CA.string
@@ -417,7 +427,7 @@ specCodec = Codec.codec' decode encode
     , Tuple "commands" (J.fromArray (map (Codec.encode commandDeclCodec) s.commands))
     , Tuple "rules" (J.fromArray (map (Codec.encode ruleCodec) s.rules))
     , Tuple "deadlines" (J.fromArray (map (Codec.encode deadlineCodec) s.deadlines))
-    ]
+    ] <> clockField s.clock
   decode json = do
     o <- note (CA.TypeMismatch "a Glassbox artifact object") (J.toObject json)
     version <- lmap (CA.AtKey "glassbox") (required o "glassbox" >>= Codec.decode CA.int)
@@ -438,6 +448,7 @@ specCodec = Codec.codec' decode encode
     commands <- listAt o "commands" commandDeclCodec
     rules <- listAt o "rules" ruleCodec
     deadlines <- listAt o "deadlines" deadlineCodec
+    clock <- traverse (lmap (CA.AtKey "clock") <<< Codec.decode clockCodec) (Object.lookup "clock" o)
     -- Normalised upward, never downward. A file that says 1 and carries a
     -- command was understating itself; a file that says 0 or -3 — which the
     -- format has always accepted — is now read as the 1 it actually is,
@@ -456,6 +467,7 @@ specCodec = Codec.codec' decode encode
       , commands
       , rules
       , deadlines
+      , clock
       })
 
 normalise :: Spec -> Spec
@@ -467,6 +479,9 @@ normalise spec = spec { version = versionFor spec }
 
 -- | Omitted entirely when there is nothing to say, so the smallest artifact
 -- | stays small.
+clockField :: Maybe Clock -> Array (Tuple String Json)
+clockField = maybe [] (\c -> [ Tuple "clock" (Codec.encode clockCodec c) ])
+
 notesField :: Array String -> Array (Tuple String Json)
 notesField = case _ of
   [] -> []

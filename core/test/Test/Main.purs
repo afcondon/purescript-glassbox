@@ -42,9 +42,11 @@ import Test.Harness (check, section)
 import Test.Property (properties)
 import Test.Unit.Codec (codecUnits)
 import Test.Unit.Commands (commandUnits)
+import Test.Unit.Drive (driveUnits)
 import Test.Unit.Edges (edgeUnits)
 import Test.Unit.DSL (dslUnits, roundTripsMachine)
 import Test.Unit.Export (exportUnits)
+import Test.Unit.Host (hostUnits)
 import Test.Unit.Lint (lintUnits)
 import Test.Unit.Run (runUnits)
 
@@ -468,10 +470,12 @@ main = do
     , dslUnits
     , runUnits
     , edgeUnits
+    , driveUnits
     , codecUnits
     , commandUnits
     , exportUnits
     , lintUnits
+    , hostUnits
     , properties
     ]
   let results = join groups

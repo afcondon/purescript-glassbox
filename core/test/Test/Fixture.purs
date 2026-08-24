@@ -75,6 +75,7 @@ blank =
   , commands: []
   , rules: []
   , deadlines: []
+  , clock: Nothing
   }
 
 sid :: String -> StateId

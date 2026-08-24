@@ -31,6 +31,8 @@ module Glassbox.Run
   , Step
   , initialStep
   , dueAt
+  , Alarm
+  , alarmFor
   ) where
 
 import Prelude
@@ -41,7 +43,8 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Tuple (Tuple(..))
 import Glassbox.Spec
-  ( CommandId
+  ( Clock
+  , CommandId
   , ConfigId
   , EventId
   , Expr(..)
@@ -231,10 +234,37 @@ initialStep spec event =
   , commands: []
   }
 
--- | When the deadline for a state falls due, relative to when it was entered.
+-- | What a host must set a timer for on entering a state.
 -- |
--- | `Nothing` when the state resolves only on events, or when the deadline's
--- | quantity does not evaluate to a number under this world.
+-- | **Relative**, unlike `dueAt`, and carrying its own unit. That is the whole
+-- | difference and it is the one that matters: a host is told *how long* and
+-- | *in what*, so the arithmetic that converts to its own clock happens once,
+-- | where the unit is still in scope, instead of being assumed at both ends of
+-- | an addition.
+-- |
+-- | `clock` is `Nothing` only for an artifact that declares deadlines and no
+-- | clock, which the timing lint rejects — so a host that gated its load on
+-- | `Glassbox.Lint` will never see that case, and one that did not deserves to
+-- | find out here rather than after waiting the wrong number of somethings.
+type Alarm =
+  { fires :: EventId
+  , after :: Number
+  , clock :: Maybe Clock
+  }
+
+-- | The alarm a state asks for, or `Nothing` if it resolves only on events.
+alarmFor :: Spec -> World -> StateId -> Maybe Alarm
+alarmFor spec world sid = case deadlineFor spec sid of
+  Nothing -> Nothing
+  Just d -> case evalExpr world d.after of
+    Just (VNumber n) -> Just { fires: d.fires, after: n, clock: spec.clock }
+    _ -> Nothing
+
+-- | When the deadline for a state falls due, on a clock the caller is keeping.
+-- |
+-- | Both numbers must already be in the machine's own clock; this function
+-- | cannot check that and does not try. Prefer `alarmFor`, which hands back the
+-- | unit along with the quantity.
 dueAt :: Spec -> World -> StateId -> Number -> Maybe { fires :: EventId, at :: Number }
 dueAt spec world sid enteredAt = case deadlineFor spec sid of
   Nothing -> Nothing
