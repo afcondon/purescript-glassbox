@@ -247,7 +247,7 @@ edgesOfUnits = do
 
   let world = worldFrom timed
   let shown = edgesOf defaultOptions world timed
-  let hidden = edgesOf { showRefusals: false } world timed
+  let hidden = edgesOf (defaultOptions { showRefusals = false }) world timed
   let ofKind k = filter (\e -> e.kind == k)
   let from s = filter (\e -> e.from == s)
 

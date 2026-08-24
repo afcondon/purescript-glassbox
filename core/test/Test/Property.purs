@@ -32,7 +32,7 @@ import Data.Maybe (Maybe(..), isJust, isNothing)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Glassbox.Codec.JSON (decodeSpec, encodeSpec, parseSpec, printSpec)
-import Glassbox.Edges (Edge, EdgeKind(..), defaultOptions, edgesOf, merge)
+import Glassbox.Edges (Edge, EdgeKind(..), assignments, defaultOptions, edgesOf, merge)
 import Glassbox.Run (World, commandsFor, evalGuard, lookupConfig, resolve, worldFrom)
 import Glassbox.Spec
   ( EventId(..)
@@ -254,7 +254,9 @@ edgesAgreeWithResolve :: Gen Result
 edgesAgreeWithResolve = do
   spec <- genSpec
   world <- genWorldFor spec
-  let edges = edgesOf defaultOptions world spec
+  -- Under ONE world, which is what this correspondence is about. The union
+  -- over unreported facts is a different statement and is the property below.
+  let edges = edgesOf (defaultOptions { factsUnknown = false }) world spec
   let wrong = filter (disagrees spec world edges) (crossProduct spec)
   pure
     ( if length wrong == 0 then Success
@@ -270,13 +272,61 @@ edgesAgreeWithResolve = do
         Refuse _ -> not (any (\g -> g.from == s && g.to == s && g.kind == OnRefusal && elem e g.events) edges)
         Stay -> any (\g -> g.from == s && g.kind /= OnDeadline && elem e g.events) edges
 
+-- | With facts unknown, the edge set is the union over every way they could be
+-- | reported — and it has to be exactly that union, in both directions.
+-- |
+-- | The direction that matters is completeness, and it is the one a real machine
+-- | caught: Bosun's supervisor guards `raised -restart-> restarting` on a fact,
+-- | and under a bare world the guarded case lost to the refusal beneath it, so
+-- | the transition was simply absent from the drawing. A picture that omits an
+-- | arrow is worse than no picture, because the reason to draw one is that it is
+-- | a second opinion.
+edgesUnionEveryAssignment :: Gen Result
+edgesUnionEveryAssignment = do
+  spec <- genSpec
+  world <- genWorldFor spec
+  let
+    edges = edgesOf defaultOptions world spec
+    worlds = assignments world (map _.id spec.facts)
+
+    -- Completeness: a pair that moves under SOME assignment is drawn.
+    -- Same carve-out as the single-world property: an event a deadline delivers
+    -- is drawn as a deadline edge, never as one a person could cause.
+    byDeadline s e = map _.fires (deadlineFor spec s) == Just e
+
+    missed = filter
+      (\(Tuple s e) -> not (byDeadline s e) && movesSomewhere s e && not (drawn s e))
+      (crossProduct spec)
+
+    movesSomewhere s e = any (\w -> isMove (resolve spec w s e)) worlds
+
+    isMove = case _ of
+      Move _ -> true
+      _ -> false
+
+    drawn s e = any (\g -> g.from == s && g.kind == OnEvent && elem e g.events) edges
+
+    -- Soundness: every arrow drawn is one the machine really does produce
+    -- under some assignment. Nothing invented.
+    invented = filter (not <<< real) (filter (\g -> g.kind == OnEvent) edges)
+
+    real g = any (\e -> any (\w -> resolve spec w g.from e == Move g.to) worlds) g.events
+
+  pure
+    ( if length missed == 0 && length invented == 0 then Success
+      else withSpec spec
+        ( "with facts unknown the edge set missed " <> show (length missed)
+            <> " pairs and invented " <> show (length invented) <> " arrows"
+        )
+    )
+
 -- | Hiding refusals removes refusal arrows and touches nothing else.
 hidingRefusalsRemovesOnlyRefusals :: Gen Result
 hidingRefusalsRemovesOnlyRefusals = do
   spec <- genSpec
   world <- genWorldFor spec
   let shown = edgesOf defaultOptions world spec
-  let hidden = edgesOf { showRefusals: false } world spec
+  let hidden = edgesOf (defaultOptions { showRefusals = false }) world spec
   pure
     ( holds "hiding refusals changed something other than the refusals"
         ( filter (\e -> e.kind /= OnRefusal) shown == hidden
@@ -427,6 +477,7 @@ properties = do
   i <- prop "resolve is total, including on pairs the machine never heard of" resolveIsTotal
   j <- prop "a machine with no rules stays put whatever it is fed" noRulesMeansStay
   k <- prop "the derived edge set agrees with resolve, pair for pair" edgesAgreeWithResolve
+  k2 <- prop "with facts unknown the edge set is exactly the union over them" edgesUnionEveryAssignment
   l <- prop "hiding refusals removes only refusals" hidingRefusalsRemovesOnlyRefusals
 
   m <- prop "Not (Not g) is g" doubleNegation
@@ -439,4 +490,4 @@ properties = do
   r <- prop "only a Move ever asks the host to do anything" nothingHappensWithoutAMove
   s <- prop "the commands depend on the (state, outcome) pair and nothing else" commandsDependOnlyOnThePair
 
-  pure [ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s ]
+  pure [ a, b, c, d, e, f, g, h, i, j, k, k2, l, m, n, o, p, q, r, s ]

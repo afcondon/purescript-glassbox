@@ -12,6 +12,7 @@ stateDiagram-v2
     done : Done  (entry chime)
     paused : Paused  (entry hold-everything)
     [*] --> idle
+    idle --> locking : start
     locking --> paused : pause
     locking --> unlocking : cancel
     locking --> filling : step complete

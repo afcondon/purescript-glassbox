@@ -8,6 +8,7 @@ stateDiagram-v2
     [*] --> off
     off --> satisfied : mode
     off --> boosting : boost
+    off --> frost : thermostat calls
     off --> fault : boiler fault
     frost --> satisfied : mode
     frost --> boosting : boost
@@ -15,6 +16,7 @@ stateDiagram-v2
     frost --> fault : boiler fault
     satisfied --> off : mode
     satisfied --> boosting : boost
+    satisfied --> heating : thermostat calls
     satisfied --> fault : boiler fault
     heating --> off : mode
     heating --> boosting : boost
