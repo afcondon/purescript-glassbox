@@ -28,6 +28,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (error, log)
 import Glassbox.Codec.JSON (parseSpec)
+import Glassbox.Canonical (canonicalBytes)
 import Glassbox.DSL.Print (renderAll)
 import Glassbox.Edges (defaultOptions, edgesOf)
 import Glassbox.Export.StateDiagram (toStateDiagram)
@@ -46,6 +47,7 @@ main = do
   args <- argv
   case drop2 args of
     [ "lint", inDir ] -> lintCmd inDir
+    [ "canonical", inDir ] -> canonicalCmd inDir
     [ "render-all", inDir, outDir ] -> renderAllCmd inDir outDir
     [ "vocabulary", inDir, outDir, prefix ] ->
       vocabularyCmd inDir outDir prefix defaultRegenerate
@@ -59,6 +61,10 @@ usage = do
   error ""
   error "  lint <machines-dir>"
   error "      the correctness lints. Exit 1 if anything is rejected."
+  error ""
+  error "  canonical <machines-dir>"
+  error "      each machine's canonical form, the text a machine hash is taken over."
+  error "      Byte-identical on every runtime by construction; that is the point."
   error ""
   error "  render-all <machines-dir> <out-dir>"
   error "      every machine in every candidate syntax (Blocks, Table) and as a state diagram"
@@ -98,6 +104,17 @@ lintCmd inDir = do
         <> show (length yes) <> " warned"
       log (explain found)
       pure (not (null no))
+
+-- | The canonical form of every machine, on stdout, each under its own banner.
+-- |
+-- | Printed rather than written to files because its consumers are a hash and a
+-- | diff between two runtimes, neither of which wants a directory.
+canonicalCmd :: FilePath -> Effect Unit
+canonicalCmd inDir = do
+  machines <- readMachines inDir
+  for_ machines \{ name, spec } -> do
+    log ("=== " <> name <> " ===")
+    log (canonicalBytes spec)
 
 renderAllCmd :: FilePath -> FilePath -> Effect Unit
 renderAllCmd inDir outDir = do

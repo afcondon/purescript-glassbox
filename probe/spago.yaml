@@ -1,0 +1,13 @@
+package:
+  name: glassbox-probe
+  description: "Throwaway: prove the canonical form is byte-identical under Gnomon"
+  dependencies:
+    - console
+    - effect
+    - either
+    - foldable-traversable
+    - tuples
+    - glassbox
+    - prelude
+  run:
+    main: Probe.Main

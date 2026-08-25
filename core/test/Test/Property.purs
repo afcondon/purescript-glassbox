@@ -24,13 +24,14 @@ module Test.Property
 
 import Prelude
 
-import Data.Array (difference, filter, length, mapMaybe, nub, null, sort)
+import Data.Array (difference, filter, length, mapMaybe, nub, null, reverse, sort)
 import Data.Either (Either(..))
 import Data.Foldable (any, elem)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), isJust, isNothing)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
+import Glassbox.Canonical (canonicalBytes)
 import Glassbox.Codec.JSON (decodeSpec, encodeSpec, parseSpec, printSpec)
 import Glassbox.Edges (Edge, EdgeKind(..), assignments, defaultOptions, edgesOf, merge)
 import Glassbox.Run (World, commandsFor, evalGuard, lookupConfig, resolve, worldFrom)
@@ -330,6 +331,69 @@ edgesUnionEveryAssignment = do
         )
     )
 
+
+-- | Saving a machine and loading it back is the same machine.
+-- |
+-- | This is the pin's actual promise, and the only one that matters
+-- | operationally: a host built against a hash must still accept the artifact
+-- | after anything has re-serialised it. If the canonical form did not survive
+-- | the codec's own round trip, every pinned host would reject its own machine
+-- | the first time a tool rewrote the file.
+canonicalSurvivesTheRoundTrip :: Gen Result
+canonicalSurvivesTheRoundTrip = do
+  spec <- genSpec
+  pure case parseSpec (printSpec spec) of
+    Left err -> withSpec spec ("re-encoding did not decode: " <> err)
+    Right back
+      | canonicalBytes back == canonicalBytes spec -> Success
+      | otherwise -> withSpec spec "the canonical form did not survive the round trip"
+
+-- | Declaration order is presentation, and the hash must not see it.
+-- |
+-- | Byte-hashing an artifact rejects a reformatted but behaviourally identical
+-- | machine, which is how a safety mechanism becomes a nuisance people switch
+-- | off. Listing states in a different order changes what a table looks like
+-- | and changes nothing the machine does, because `initial` names the entry
+-- | point rather than taking the first.
+-- |
+-- | `rules` and `deadlines` are deliberately NOT reversed here. They are looked
+-- | up with `find` and `head <<< filter`, so where an artifact carries two
+-- | entries under one key the first genuinely wins, and reversing them would be
+-- | a behaviour change that the canonical form is right to notice.
+canonicalIgnoresDeclarationOrder :: Gen Result
+canonicalIgnoresDeclarationOrder = do
+  spec <- genSpec
+  let
+    shuffled = spec
+      { states = reverse spec.states
+      , events = reverse spec.events
+      , config = reverse spec.config
+      , facts = reverse spec.facts
+      , refusals = reverse spec.refusals
+      , commands = reverse spec.commands
+      }
+  pure
+    ( if canonicalBytes shuffled == canonicalBytes spec then Success
+      else withSpec spec "reordering the declarations changed the canonical form"
+    )
+
+-- | Two machines that differ are not the same machine.
+-- |
+-- | The weak direction of the pin, and worth stating because a canonical form
+-- | that collapsed everything would pass both properties above. Changing where
+-- | a rule sends the machine must move the bytes.
+canonicalSeparatesDifferentMachines :: Gen Result
+canonicalSeparatesDifferentMachines = do
+  spec <- genSpec
+  let bent = spec { initial = StateId (unwrapState spec.initial <> "-elsewhere") }
+  pure
+    ( if canonicalBytes bent /= canonicalBytes spec then Success
+      else withSpec spec "two different machines share a canonical form"
+    )
+  where
+  unwrapState = case _ of
+    StateId x -> x
+
 -- | Hiding refusals removes refusal arrows and touches nothing else.
 hidingRefusalsRemovesOnlyRefusals :: Gen Result
 hidingRefusalsRemovesOnlyRefusals = do
@@ -490,6 +554,10 @@ properties = do
   k2 <- prop "with facts unknown the edge set is exactly the union over them" edgesUnionEveryAssignment
   l <- prop "hiding refusals removes only refusals" hidingRefusalsRemovesOnlyRefusals
 
+  c1 <- prop "the canonical form survives the round trip" canonicalSurvivesTheRoundTrip
+  c2 <- prop "and ignores declaration order" canonicalIgnoresDeclarationOrder
+  c3 <- prop "but separates two different machines" canonicalSeparatesDifferentMachines
+
   m <- prop "Not (Not g) is g" doubleNegation
   n <- prop "De Morgan: not (all gs) is any (not gs)" deMorganOverAnd
   o <- prop "De Morgan: not (any gs) is all (not gs)" deMorganOverOr
@@ -500,4 +568,4 @@ properties = do
   r <- prop "only a Move ever asks the host to do anything" nothingHappensWithoutAMove
   s <- prop "the commands depend on the (state, outcome) pair and nothing else" commandsDependOnlyOnThePair
 
-  pure [ a, b, c, d, e, f, g, h, i, j, k, k2, l, m, n, o, p, q, r, s ]
+  pure [ a, b, c, d, e, f, g, h, i, j, k, k2, l, c1, c2, c3, m, n, o, p, q, r, s ]
