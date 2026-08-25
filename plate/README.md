@@ -24,6 +24,26 @@ described twice: the grid comes from `spec.rules`, the reachability from
 `Glassbox.Edges`, the findings from `Glassbox.Lint`. If the page and the
 runtime disagreed about an artifact, the page could not have been generated.
 
+Each plate carries the machine **three ways**, all of them out of the library:
+
+| | |
+|---|---|
+| the grid | `spec.rules` set as a state × event table — `Table`'s bet, typeset |
+| the drawing | `Glassbox.Export.StateDiagram` over `Glassbox.Edges`, generated at build time |
+| the rules | `Glassbox.DSL.Print.print Blocks`, printed whole |
+
+They are there to be *compared*. Where two of them disagree, one of them is
+wrong about code somebody is running, and the point of setting all three on one
+page is that the disagreement becomes something you can see rather than
+something you have to go and check.
+
+**The drawing is generated, never embedded.** `core/machines/rendered/*.mermaid.txt`
+is committed and is wrong — `elevator.mermaid.txt` has three arrows out of `up`
+and none into it. It is wrong because it was rendered once and nothing since
+made anyone look. Calling `toStateDiagram` here means the picture corrects
+itself the moment `Glassbox.Edges` does, with no regeneration step and no stale
+fixture to forget.
+
 The corpus is the five machines in `core/machines/` plus
 `plate/machines/supervise-group.json`, which is Bosun's — the lifecycle of one
 `bosun supervise` group, and the only machine here that describes code somebody
@@ -82,7 +102,11 @@ a check with no output looks exactly like a check that was never run.
 - **totality** — pairs declared, out of states × events.
 - **reach** — states with no inbound edge, from `Glassbox.Edges`.
 - **edges** — transitions the *rules* name that the derived *edge set* does
-  not contain. Two readings of one artifact, compared.
+  not contain, split into the two kinds that look identical and are not: an arm
+  behind a **fact** guard has been dropped and that is a defect; an arm behind a
+  **config** guard is correctly absent, because `edgesOf` enumerates facts and
+  holds config at its defaults on purpose — config is what decides which machine
+  this is.
 - **vocabulary** — commands, refusals, facts and config declared and never
   used. (Config read only by a deadline's `after` counts as used: a looper's
   `count-in-beats` appears in no guard at all.)
@@ -93,11 +117,21 @@ a check with no output looks exactly like a check that was never run.
 Written up on the page itself, from counts it takes off the plates. The one
 worth repeating here:
 
-> **13 transitions the rules name that no drawing shows.** Every one is an arm
+> **11 transitions the rules name that no drawing shows.** Every one is an arm
 > of a guarded rule offering a *choice* of destination.
 > `Glassbox.Edges.probe` resolves a pair under every assignment of the facts
 > and then keeps **the first move it finds**, so a rule with two destinations
 > contributes one edge and the other is silently dropped. It reaches everything
-> downstream of the edge set — `unreachableStates`, the Mermaid export, the
-> drawn picture. The committed `elevator.mermaid.txt` has no arrow into `up` at
-> all: a lift that only goes down.
+> downstream of the edge set — `unreachableStates`, the Mermaid export, and
+> every picture drawn from it, including the ones on this page. The committed
+> `elevator.mermaid.txt` has no arrow into `up` at all: a lift that only goes
+> down.
+>
+> The count is 11 and not 13, and the two it excludes are the useful part.
+> `loop`'s `empty × record → armed` and `washing-machine`'s
+> `locking × step-done → prewashing` are missing from the edge set too and
+> *belong* there: each sits behind a config read. A washer built without a
+> prewash cycle genuinely cannot reach `prewashing`, so a drawing is right to
+> leave it out. Two absences that look identical, one a bug and one correct —
+> which is exactly the sort of thing a page like this exists to make visible,
+> and why the plates label them differently.

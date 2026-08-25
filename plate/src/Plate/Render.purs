@@ -296,6 +296,11 @@ mixBar p =
 -- One plate
 -- =============================================================================
 
+-- | The order is an argument. The grid is the plate, so it comes first and its
+-- | footnotes come with it; then the two other renderings of the same machine —
+-- | the drawing, and the syntax it would be authored in — and only then the
+-- | timing and the glossaries. A reader who wants to check a cell never has to
+-- | scroll past a listing to reach it.
 plateSection :: Plate -> Node
 plateSection p =
   el "section" [ cls "plate", attr "id" ("m-" <> p.name), attr "data-machine" p.name ]
@@ -306,6 +311,8 @@ plateSection p =
         ]
     , gridFigure p
     , casesBlock p
+    , diagramBlock p
+    , rulesBlock p
     , deadlinesBlock p
     , vocabBlock p
     ]
@@ -366,7 +373,7 @@ prose s = mapWithIndex piece (split (Pattern "`") s)
 
 auditBlock :: Plate -> Node
 auditBlock p =
-  el "div" [ cls "audit" ]
+  el "div" [ cls "audit", attr "id" ("checks-" <> p.name) ]
     [ el "div" [ cls "audit-title" ] [ text "Checks" ]
     , el "div" [ cls "audit-items" ]
         [ check "totality"
@@ -378,9 +385,9 @@ auditBlock p =
             ("all " <> show (length p.spec.states) <> " states reachable")
             (joinWith ", " (map rawState a.unreachable) <> " has no inbound edge")
         , check "edges"
-            (null a.missingEdges)
-            "the rules and the edge set agree"
-            (show (length a.missingEdges) <> " transitions the rules name are missing from the edge set")
+            (null dropped)
+            ("the rules and the edge set agree" <> suppressedNote)
+            (show (length dropped) <> " transitions the rules name are missing from the edge set" <> suppressedNote)
         , check "vocabulary"
             (null dead)
             "every declaration is used"
@@ -392,21 +399,42 @@ auditBlock p =
         ]
     , when_ (not (null a.findings))
         (el "ul" [ cls "findings" ] (map finding a.findings))
-    , when_ (not (null a.missingEdges))
-        ( el "ul" [ cls "findings missing" ]
-            ( map
-                ( \m -> el_ "li"
-                    [ el "span" [ cls "finding-lint mono" ] [ text "not drawn" ]
-                    , el "span" [ cls "mono" ]
-                        [ text (rawState m.from <> " —" <> rawEvent m.on <> "→ " <> rawState m.to) ]
-                    ]
-                )
-                a.missingEdges
-            )
+    , when_ (not (null dropped))
+        (el "ul" [ cls "findings missing" ] (map (edgeLine "not drawn") dropped))
+    -- Set apart, and set quietly, because it is not a defect. An arm behind a
+    -- config read is an arm this configuration does not have, and a drawing
+    -- that omitted it would be right about the machine somebody is running.
+    , when_ (not (null suppressed))
+        ( el "div" [ cls "suppressed" ]
+            [ el "ul" [ cls "findings" ] (map (edgeLine "by config") suppressed)
+            , el "p" [ cls "suppressed-say" ]
+                [ el "code" [] [ text "Glassbox.Edges" ]
+                , text " enumerates facts and holds config at its defaults, deliberately: config is "
+                , text "what decides which machine this is. So these arms are correctly absent from "
+                , text "the drawing, and are listed only because their absence looks identical to "
+                , text "the defect above until you say which is which."
+                ]
+            ]
         )
     ]
   where
   a = p.audit
+  dropped = filter (\m -> not m.configGuarded) a.missingEdges
+  suppressed = filter _.configGuarded a.missingEdges
+
+  suppressedNote =
+    if null suppressed then ""
+    else "; " <> show (length suppressed) <> " arm"
+      <> (if length suppressed == 1 then "" else "s")
+      <> " config-suppressed"
+
+  edgeLine label m =
+    el_ "li"
+      [ el "span" [ cls "finding-lint mono" ] [ text label ]
+      , el "span" [ cls "mono" ]
+          [ text (rawState m.from <> " —" <> rawEvent m.on <> "→ " <> rawState m.to) ]
+      ]
+
   dead =
     map rawCommand a.unusedCommands
       <> map rawRefusal a.unusedRefusals
@@ -792,6 +820,123 @@ exprText = case _ of
   FactOf (FactId f) -> f
 
 -- =============================================================================
+-- The drawing
+-- =============================================================================
+
+-- | The machine as a picture, generated here and now.
+-- |
+-- | Two things about this are deliberate and neither is about how it looks.
+-- |
+-- | **It is not a fixture.** `core/machines/rendered/*.mermaid.txt` exists and
+-- | is committed and is *wrong* — `elevator.mermaid.txt` has three arrows out
+-- | of `up` and none into it, a lift that only descends. It is wrong because it
+-- | was rendered once, from an edge set that was short, and nothing since has
+-- | made anyone look. Embedding it here would have made this page repeat a
+-- | stale answer with a straight face. So the text below comes from
+-- | `Glassbox.Export.StateDiagram` over `Glassbox.Edges`, at build time, and
+-- | the drawing corrects itself the moment the library does.
+-- |
+-- | **Nothing is imported to render it.** The dialect is Mermaid's because a
+-- | host renders it for free; where a host does not, the block shows its own
+-- | source, which is the same second opinion in a different medium. No script
+-- | is fetched either way, and the page stays one file.
+diagramBlock :: Plate -> Node
+diagramBlock p =
+  el "figure" [ cls "diagram" ]
+    [ el "h3" [ cls "sub-title" ]
+        [ text "Drawing"
+        , el "span" [ cls "sub-note" ]
+            [ text "the same machine, from the edge set the checks above audit" ]
+        ]
+    , el "pre" [ cls "mermaid" ] [ text (mermaidInit <> "\n" <> trim p.diagram) ]
+    , el "figcaption" [ cls "diagram-cap" ] caption
+    ]
+  where
+  dropped = filter (\m -> not m.configGuarded) p.audit.missingEdges
+
+  -- The reader looking at a lift that only descends has to be able to tell,
+  -- without leaving the picture, that the picture is what is broken. The
+  -- edges check above already knows; this only carries the reader to it.
+  caption =
+    if null dropped then
+      [ text "Drawn by "
+      , el "code" [] [ text "Glassbox.Export.StateDiagram" ]
+      , text " from "
+      , el "code" [] [ text "Glassbox.Edges" ]
+      , text ", at the moment this page was set. Refusals are left out: they are self-loops, "
+      , text "and the grid above already says which cells refuse."
+      ]
+    else
+      [ el "span" [ cls "cap-flag" ] [ text "▲" ]
+      , el "a" [ cls "cap-link", attr "href" ("#checks-" <> p.name) ]
+          [ text (show (length dropped) <> " arrow" <> (if length dropped == 1 then "" else "s")) ]
+      , text " that the rules above name are missing from this drawing. The picture is short, "
+      , text "not the machine: "
+      , el "code" [] [ text "Glassbox.Edges.probe" ]
+      , text " keeps the first destination a guarded rule offers and drops the rest. Read the "
+      , text "grid, not the arrows, until that is fixed."
+      ]
+
+-- | A rendering instruction, not a fact about the machine — which is why it is
+-- | a Mermaid directive rather than something `toStateDiagram` was asked to
+-- | emit. `neutral` is the greyscale theme: the plate spends colour four times
+-- | and a picture that arrived with its own palette would make a fifth.
+mermaidInit :: String
+mermaidInit =
+  "%%{init: {\"theme\":\"neutral\",\"themeVariables\":"
+    <> "{\"fontFamily\":\"IBM Plex Mono, ui-monospace, monospace\",\"fontSize\":\"12px\"}}}%%"
+
+-- =============================================================================
+-- The authoring syntax
+-- =============================================================================
+
+-- | The machine as it would be written, from `Glassbox.DSL.Print`.
+-- |
+-- | The grid above *is* the `Table` syntax typeset; this is the other one, and
+-- | the page lacked it. It is printed **whole** — the author's comments, the
+-- | six declaration lists, the state blocks — because `Blocks` has a parser and
+-- | is therefore the authoring format proper, and an authoring format that
+-- | dropped anything would be disqualified. Setting an abridged version here
+-- | would be quietly claiming a round trip the abridgement does not have.
+-- |
+-- | Measured over the corpus, nine rules in ten are one-liners, so this sets in
+-- | a narrow column and reads down rather than across — which is `Blocks`'s own
+-- | bet: a reader's question is usually *what can I do from here*, and that is
+-- | a question about a state.
+rulesBlock :: Plate -> Node
+rulesBlock p =
+  el "details" [ cls "rules", attr "open" "" ]
+    [ el_ "summary"
+        [ el "span" [ cls "sub-title" ]
+            [ text "Rules"
+            , el "span" [ cls "sub-note" ]
+                [ text ("the authoring syntax, printed whole · " <> show (length lines) <> " lines") ]
+            ]
+        ]
+    , el "pre" [ cls "blocks mono" ] (concatMap lineNode lines)
+    ]
+  where
+  lines = dropTrailingBlank (split (Pattern "\n") p.blocks)
+
+  -- Typographic classification only, and total: a line is a comment, a
+  -- flush-left heading, or the body of a block. Nothing here reads the
+  -- machine — a second parser would be a second description of it.
+  lineNode line =
+    [ el "span" [ cls ("bl " <> lineClass line) ] [ text line ], text "\n" ]
+
+lineClass :: String -> String
+lineClass line
+  | String.take 1 line == "#" = "bl-note"
+  | trim line == "" = "bl-gap"
+  | String.take 1 line == " " = "bl-body"
+  | otherwise = "bl-head"
+
+dropTrailingBlank :: Array String -> Array String
+dropTrailingBlank ls = case Array.last ls of
+  Just l | trim l == "" -> dropTrailingBlank (fromMaybe ls (Array.init ls))
+  _ -> ls
+
+-- =============================================================================
 -- Deadlines
 -- =============================================================================
 
@@ -974,15 +1119,36 @@ findings corpus =
                         , text "destination is silently dropped. It reaches everything downstream of the "
                         , text "edge set: "
                         , el "code" [] [ text "unreachableStates" ]
-                        , text ", the Mermaid export, and the drawn picture. The committed "
+                        , text ", the Mermaid export, and every picture drawn from it — including the "
+                        , text "one under each grid above, and the committed "
                         , el "code" [] [ text "elevator.mermaid.txt" ]
-                        , text " has no arrow into "
+                        , text ", which has no arrow into "
                         , el "code" [] [ text "up" ]
-                        , text " at all — a lift that only goes down."
+                        , text " at all: a lift that only goes down."
                         ]
                     )
                 ]
             ]
+        , when_ (suppressed > 0)
+            ( el "div" [ cls "found-item" ]
+                [ el "div" [ cls "found-num mono" ] [ text (show suppressed) ]
+                , el "p" []
+                    [ el_ "strong" [ text "More that look identical, and are correct." ]
+                    , text " "
+                    , foldNodes (weave suppressedEdges)
+                    , text (if suppressed == 1 then " is " else " are ")
+                    , text "missing from the edge set too, and belongs there: each sits behind a "
+                    , el_ "em" [ text "config" ]
+                    , text " read, and "
+                    , el "code" [] [ text "edgesOf" ]
+                    , text " enumerates facts only, deliberately — config is what decides which "
+                    , text "machine this is, so a washer built without a prewash cycle genuinely "
+                    , text "cannot reach that state and a drawing is right to leave it out. Telling "
+                    , text "the two kinds apart is the difference between a bug report and a wrong "
+                    , text "one, and a single count cannot show it."
+                    ]
+                ]
+            )
         , el "div" [ cls "found-item" ]
             [ el "div" [ cls "found-num mono" ] [ text (show turns) ]
             , el "p" []
@@ -1000,8 +1166,32 @@ findings corpus =
     ]
   where
   s = corpusStats corpus.plates
-  missing = sum (map (\p -> length p.audit.missingEdges) corpus.plates)
   turns = sum (map (\p -> p.tally.turns) corpus.plates)
+
+  -- Both numbers are counted off the plates, like every other number here, so
+  -- neither survives the fix that removes it.
+  missing = length (concatMap (\p -> filter (\m -> not m.configGuarded) p.audit.missingEdges) corpus.plates)
+  suppressedEdges =
+    concatMap
+      (\p -> map (\m -> Tuple p.name m) (filter _.configGuarded p.audit.missingEdges))
+      corpus.plates
+  suppressed = length suppressedEdges
+
+  -- Named rather than counted: these are the two the reader has to be able to
+  -- go and look at, or the distinction is just an assertion.
+  weave items =
+    concatMap identity
+      ( mapWithIndex
+          ( \i item ->
+              (if i == 0 then [] else if i == length items - 1 then [ text " and " ] else [ text ", " ])
+                <> [ suppressedRef item ]
+          )
+          items
+      )
+
+  suppressedRef (Tuple name m) =
+    el "a" [ cls "found-ref", attr "href" ("#checks-" <> name) ]
+      [ el "code" [] [ text (name <> " · " <> rawState m.from <> " × " <> rawEvent m.on <> " → " <> rawState m.to) ] ]
 
 colophon :: Corpus -> Node
 colophon corpus =

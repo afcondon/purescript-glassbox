@@ -765,6 +765,110 @@ tr.gridrow.lit-row th.rowhead { background: var(--lit-wash); box-shadow: inset 3
 }
 .outcome .refusal { color: var(--signal); }
 
+/* ------------------------------------------------------------- the drawing */
+
+/* The picture is a FIGURE, not the plate: it sits inside a hairline box, at a
+ * smaller measure than the grid, because it is the second reading of a machine
+ * and the grid is the first. Where a host renders Mermaid, the box holds an
+ * SVG; where it does not, the box holds the diagram's own source — the same
+ * second opinion, one medium down. Nothing is fetched in either case.
+ */
+
+.diagram { margin: 0 0 2.25rem; }
+
+pre.mermaid {
+  margin: 0;
+  padding: 1.25rem 1.25rem 1.1rem;
+  background: var(--plate);
+  border: 1px solid var(--hairline);
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  color: var(--ink-3);
+  white-space: pre;
+  tab-size: 4;
+}
+
+pre.mermaid svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Mermaid's theme is chosen at parse time and the greyscale one is a LIGHT
+ * theme, so on a dark plate the drawing would arrive dark-on-dark. A greyscale
+ * picture inverts exactly — no hue to rotate — which is why the diagram was
+ * asked for in grey rather than in the renderer's default palette. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) pre.mermaid svg { filter: invert(1); }
+}
+:root[data-theme="dark"] pre.mermaid svg { filter: invert(1); }
+
+.diagram-cap {
+  margin: 0.55rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.55;
+  color: var(--ink-3);
+  max-width: 44rem;
+}
+.diagram-cap code { color: var(--ink-2); }
+.cap-flag {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--signal);
+  margin-right: 0.3rem;
+}
+.cap-link {
+  color: var(--signal);
+  font-weight: 500;
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+}
+
+/* ------------------------------------------------------ the authoring form */
+
+/* Nine rules in ten are one-liners, so this sets in a narrow column and reads
+ * DOWN. It is open by default — a rendering the page claims to carry should
+ * not need a click to exist — and closes for a reader who is skimming grids.
+ */
+
+.rules { margin: 0 0 2.25rem; }
+.rules > summary { list-style: none; cursor: pointer; }
+.rules > summary::-webkit-details-marker { display: none; }
+.rules > summary .sub-title { margin-bottom: 1.1rem; }
+.rules > summary .sub-title::after {
+  content: "▾";
+  margin-left: auto;
+  color: var(--ink-4);
+  font-size: 0.6875rem;
+  letter-spacing: 0;
+}
+.rules:not([open]) > summary .sub-title::after { content: "▸"; }
+.rules:not([open]) > summary .sub-title { margin-bottom: 0; }
+
+.blocks {
+  margin: 0;
+  padding: 1.15rem 1.35rem;
+  background: var(--plate);
+  border: 1px solid var(--hairline);
+  max-width: 44rem;
+  overflow-x: auto;
+  font-size: 0.6875rem;
+  line-height: 1.62;
+  color: var(--ink-2);
+  tab-size: 2;
+}
+
+/* Typographic weight only. A comment recedes, a flush-left line is a heading,
+ * an indented line is the body of a block — which is the shape `Blocks` was
+ * designed to have, and the only thing a stylesheet can honestly know about it
+ * without parsing the machine a second time. */
+.bl-note { color: var(--ink-4); }
+.bl-head { color: var(--ink); font-weight: 500; }
+.bl-body { color: var(--ink-2); }
+
 /* ----------------------------------------------------------- the deadlines */
 
 .deadlines { margin: 0 0 2.25rem; }
@@ -920,3 +1024,27 @@ tr.gridrow.lit-row th.rowhead { background: var(--lit-wash); box-shadow: inset 3
 
 .findings.missing li { grid-template-columns: 5.5rem 1fr; font-size: 0.6875rem; }
 .findings.missing .finding-lint { color: var(--signal); }
+
+.found-ref { text-decoration: none; border-bottom: 1px solid var(--rule); }
+.found-ref code { color: var(--ink); }
+
+/* An arm behind a config read is missing from the edge set and BELONGS there.
+ * It is set with no flag colour and a dotted rule for exactly that reason: the
+ * page would be lying about a defect if it drew this the same way. */
+.suppressed { margin-top: 0.75rem; }
+.suppressed .findings {
+  margin-top: 0;
+  padding-top: 0.6rem;
+  border-top: 1px dotted var(--rule);
+}
+.suppressed .findings li { grid-template-columns: 5.5rem 1fr; font-size: 0.6875rem; }
+.suppressed .finding-lint { color: var(--ink-3); }
+.suppressed .findings .mono { color: var(--ink-3); }
+.suppressed-say {
+  margin: 0.5rem 0 0;
+  max-width: none;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.suppressed-say code { color: var(--ink-2); }

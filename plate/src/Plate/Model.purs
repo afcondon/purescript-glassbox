@@ -20,6 +20,16 @@
 -- | already in is not a `Stay` — it exits and re-enters, and re-entering runs
 -- | the entry commands. `raised × tick -> raised` is a supervisor's whole
 -- | keep-alive loop and it would read as an idle cell without this.
+-- |
+-- | ### Three readings of one artifact
+-- |
+-- | A `Plate` carries the machine three ways, and all three come out of the
+-- | library rather than out of this package: the grid is `spec.rules` set as a
+-- | table, `blocks` is `Glassbox.DSL.Print`'s authoring syntax, and `diagram`
+-- | is `Glassbox.Export.StateDiagram` over `Glassbox.Edges`. They are here to
+-- | be *compared*. Where two of them disagree about a machine, one of them is
+-- | wrong about code somebody is running, and the point of setting them on one
+-- | page is that the disagreement is then something you can see.
 module Plate.Model
   ( CellKind(..)
   , Cell
@@ -27,6 +37,7 @@ module Plate.Model
   , Note
   , Tally
   , Audit
+  , MissingEdge
   , Plate
   , plateOf
   , cellTarget
@@ -38,9 +49,12 @@ module Plate.Model
 
 import Prelude
 
-import Data.Array (concatMap, elem, filter, foldl, length, mapWithIndex, nub, null, snoc)
+import Data.Array (concatMap, elem, filter, foldl, length, mapWithIndex, nub, null, snoc, take)
+import Data.Foldable (all, any)
 import Data.Maybe (Maybe(..), isNothing)
+import Glassbox.DSL.Print (Syntax(..), print)
 import Glassbox.Edges (Edge, EdgeKind(..), defaultOptions, edgesOf, inboundTo, unreachableStates)
+import Glassbox.Export.StateDiagram (toStateDiagram)
 import Glassbox.Lint (Finding, lint)
 import Glassbox.Run (worldFrom)
 import Glassbox.Spec
@@ -131,10 +145,30 @@ type Audit =
   -- and that restriction is what makes the answer trustworthy. A single-target
   -- rule can legitimately vanish from the edge set — configuration genuinely
   -- reshapes a machine, and a `cd` state with no CD slot fitted *should* lose
-  -- its inbound edge. A rule that offers a choice cannot lose one arm of the
-  -- choice for that reason: the config that suppresses one branch leaves the
-  -- other standing.
-  , missingEdges :: Array { from :: StateId, on :: EventId, to :: StateId }
+  -- its inbound edge.
+  --
+  -- Even inside a rule that offers a choice, one arm can be *config*-guarded,
+  -- and then losing it is right rather than wrong: `edgesOf` enumerates facts
+  -- and holds config at its declared defaults, deliberately, because config is
+  -- what decides which machine this is. So each entry says which of the two it
+  -- is, and only the fact-guarded ones are a defect.
+  , missingEdges :: Array MissingEdge
+  }
+
+-- | A transition a rule names that no drawing shows, and why it is absent.
+-- |
+-- | `configGuarded` is true when every arm of the rule that produces this
+-- | destination sits behind a config read — its own guard, or the guard of a
+-- | case tried before it, since an earlier case winning is what stops a later
+-- | one being reached. Config at its defaults can then genuinely rule the arm
+-- | out, and a machine with `has-prewash: false` really cannot reach
+-- | `prewashing`. Where no config is involved, nothing about the artifact
+-- | explains the absence and the edge set is simply short.
+type MissingEdge =
+  { from :: StateId
+  , on :: EventId
+  , to :: StateId
+  , configGuarded :: Boolean
   }
 
 type Plate =
@@ -145,6 +179,16 @@ type Plate =
   , tally :: Tally
   , audit :: Audit
   , edges :: Array Edge
+  -- | The machine in the syntax it would be *written* in, from the library's
+  -- | own printer. Nothing is sliced out of it: the page sets what
+  -- | `Glassbox.DSL.Print` emits, and a reader comparing it against the grid
+  -- | above is comparing two renderings and not a rendering against a summary.
+  , blocks :: String
+  -- | The machine as `stateDiagram-v2` text, generated here and now from the
+  -- | edge set this same plate audits — never read from a committed fixture,
+  -- | which would be a fourth description of the machine and the one nobody
+  -- | regenerates.
+  , diagram :: String
   }
 
 plateOf :: String -> Spec -> Plate
@@ -156,6 +200,8 @@ plateOf name spec =
   , tally: tallyOf built.rows
   , audit: auditOf spec edges built.rows
   , edges
+  , blocks: print Blocks spec
+  , diagram: toStateDiagram spec edges
   }
   where
   edges = edgesOf defaultOptions (worldFrom spec) spec
@@ -296,12 +342,33 @@ auditOf spec edges rows =
       targets = nub (concatMap (elsewhere r.from) r.cases)
     in
       if length targets < 2 then []
-      else map (\to -> { from: r.from, on: r.on, to })
+      else map (\to -> { from: r.from, on: r.on, to, configGuarded: suppressible r to })
         (filter (\to -> not (drawn r.from to)) targets)
 
   elsewhere from c = case c.outcome of
     Move to | to /= from -> [ to ]
     _ -> []
+
+  -- | Can config, at its declared defaults, account for this arm's absence?
+  --
+  -- An arm is reached only when its own guard holds *and* every case tried
+  -- before it failed, so a config read anywhere in that prefix can rule it
+  -- out. `all` rather than `any` over the arms that produce this destination:
+  -- one arm reaching it without config's permission is enough to make the
+  -- missing edge a defect.
+  suppressible r to =
+    let
+      arms = filter (\a -> a.outcome == Move to) (mapWithIndex armAt r.cases)
+    in
+      not (null arms) && all (\a -> readsConfigUpTo r a.at) arms
+
+  armAt i c = { at: i, outcome: c.outcome }
+
+  readsConfigUpTo r i = any caseReadsConfig (take (i + 1) r.cases)
+
+  caseReadsConfig c = case c.when of
+    Nothing -> false
+    Just g -> not (null (guardConfig g))
 
   drawn from to =
     not (null (filter (\e -> e.from == from && e.to == to && e.kind /= OnRefusal) edges))
