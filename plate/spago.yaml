@@ -1,0 +1,23 @@
+package:
+  name: glassbox-plate
+  description: "Typeset a machine as a plate: the transition grid as a thing a person can visually check"
+  dependencies:
+    - arrays
+    - console
+    - effect
+    - either
+    - foldable-traversable
+    - glassbox
+    - integers
+    - maybe
+    - node-buffer
+    - node-fs
+    - node-path
+    - node-process
+    - numbers
+    - ordered-collections
+    - prelude
+    - strings
+    - tuples
+  run:
+    main: Plate.Main
