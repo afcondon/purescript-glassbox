@@ -8,6 +8,7 @@ stateDiagram-v2
     stopped : Emergency stop  (entry stop-drive sound-alarm, exit cancel-alarm)
     [*] --> idle
     idle --> down : call
+    idle --> up : call
     idle --> doors_open : open doors
     idle --> stopped : emergency stop
     up --> stopped : emergency stop
@@ -18,8 +19,12 @@ stateDiagram-v2
     arriving --> stopped : emergency stop
     doors_open --> held : open doors
     doors_open --> idle : close doors
+    doors_open --> down : close doors
+    doors_open --> up : close doors
     doors_open --> stopped : emergency stop
     held --> doors_open : close doors
     held --> stopped : emergency stop
     stopped --> doors_open : reset
     doors_open --> idle : after dwell elapsed
+    doors_open --> down : after dwell elapsed
+    doors_open --> up : after dwell elapsed

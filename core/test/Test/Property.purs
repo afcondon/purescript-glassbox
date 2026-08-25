@@ -24,7 +24,7 @@ module Test.Property
 
 import Prelude
 
-import Data.Array (filter, length, nub, null, sort)
+import Data.Array (difference, filter, length, mapMaybe, nub, null, sort)
 import Data.Either (Either(..))
 import Data.Foldable (any, elem)
 import Data.Map as Map
@@ -289,22 +289,32 @@ edgesUnionEveryAssignment = do
     edges = edgesOf defaultOptions world spec
     worlds = assignments world (map _.id spec.facts)
 
-    -- Completeness: a pair that moves under SOME assignment is drawn.
-    -- Same carve-out as the single-world property: an event a deadline delivers
-    -- is drawn as a deadline edge, never as one a person could cause.
+    -- Completeness, per DESTINATION rather than per pair.
+    --
+    -- This property used to ask only whether the pair was drawn at all —
+    -- `any (\g -> g.from == s && ...)` — which a guarded rule offering a CHOICE
+    -- of destination satisfies by drawing any one of them. So it passed while
+    -- `probe` kept the first move it found and discarded the rest, and eleven
+    -- transitions were missing from the corpus with the suite green. The name
+    -- said "exactly the union over them" and the body checked something weaker;
+    -- the name was right and the body is now what it claims.
     byDeadline s e = map _.fires (deadlineFor spec s) == Just e
 
     missed = filter
-      (\(Tuple s e) -> not (byDeadline s e) && movesSomewhere s e && not (drawn s e))
+      (\(Tuple s e) -> not (byDeadline s e) && not (null (undrawn s e)))
       (crossProduct spec)
 
-    movesSomewhere s e = any (\w -> isMove (resolve spec w s e)) worlds
+    undrawn s e = difference (movesTo s e) (drawnTo s e)
 
-    isMove = case _ of
-      Move _ -> true
-      _ -> false
+    -- Every distinct state the pair reaches under some assignment.
+    movesTo s e = nub (mapMaybe (\w -> movedTo (resolve spec w s e)) worlds)
 
-    drawn s e = any (\g -> g.from == s && g.kind == OnEvent && elem e g.events) edges
+    movedTo = case _ of
+      Move to -> Just to
+      _ -> Nothing
+
+    drawnTo s e =
+      nub (map _.to (filter (\g -> g.from == s && g.kind == OnEvent && elem e g.events) edges))
 
     -- Soundness: every arrow drawn is one the machine really does produce
     -- under some assignment. Nothing invented.

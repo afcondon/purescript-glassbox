@@ -122,7 +122,7 @@ edgesOf options world spec =
   -- transition twice, once truthfully and once misleadingly — as though a
   -- person could cause it.
   probeState decl =
-    Array.mapMaybe (probe decl.id)
+    concatMap (probe decl.id)
       (filter (not <<< deliveredByDeadline decl.id) (map _.id spec.events))
 
   deliveredByDeadline sid event = case deadlineFor spec sid of
@@ -141,37 +141,54 @@ edgesOf options world spec =
     if not options.factsUnknown then [ world ]
     else assignments world (map _.id spec.facts)
 
+  -- EVERY distinct destination the pair admits, not merely the first one found.
+  --
+  -- A guarded rule may offer a CHOICE of destination — the elevator's
+  -- `idle x call` goes up or down according to which way it is wanted — and
+  -- taking the head of the moves kept whichever assignment `assignments`
+  -- happened to enumerate first, silently discarding the rest. That deleted 11
+  -- transitions across the five-machine corpus and left `elevator` with no
+  -- arrow into `up` at all: a lift that only descends. It reached everything
+  -- downstream — `unreachableStates`, `toStateDiagram`, `glassbox-draw` — which
+  -- is the entire second-opinion value of a drawing gone.
+  --
+  -- This is the other half of enumerating worlds at all: enumerating them and
+  -- then keeping one answer asks the right question and throws away the reply.
   probe from event =
     let
       outcomes = map (\w -> resolve spec w from event) worlds
+      moveEdges = map
+        (\to -> { from, to, events: [ event ], kind: OnEvent, reason: Nothing })
+        (nub (Array.mapMaybe movedTo outcomes))
+      refusalEdges = map
+        (\rid -> { from, to: from, events: [ event ], kind: OnRefusal, reason: Just rid })
+        (nub (Array.mapMaybe refusedWith outcomes))
     in
-      case Array.head (Array.filter isMove outcomes) of
-      -- A pair that can move under SOME assignment is drawn as moving, and the
-      -- refusal it also admits is drawn beside it by the pass below.
-        Just (Move to) -> Just { from, to, events: [ event ], kind: OnEvent, reason: Nothing }
-        _ -> case Array.head (Array.filter isRefusal' outcomes) of
-          Just (Refuse rid) -> Just { from, to: from, events: [ event ], kind: OnRefusal, reason: Just rid }
-          _ -> Nothing
+      -- A pair that can both move and refuse, under different assignments, is
+      -- drawn only as moving. Whether the refusal belongs beside it is a
+      -- separate question from this fix and is deliberately left alone here.
+      if Array.null moveEdges then refusalEdges else moveEdges
 
-  isMove = case _ of
-    Move _ -> true
-    _ -> false
+  movedTo = case _ of
+    Move to -> Just to
+    _ -> Nothing
 
-  isRefusal' = case _ of
-    Refuse _ -> true
-    _ -> false
+  refusedWith = case _ of
+    Refuse rid -> Just rid
+    _ -> Nothing
 
   -- A state that resolves by itself. The target comes from asking the rules
   -- what the pending event does, never from trusting the deadline to say where
   -- it goes — which is why a `Deadline` names an event rather than a state.
-  deadlineEdges = Array.mapMaybe deadlineEdge spec.states
+  deadlineEdges = concatMap deadlineEdge spec.states
 
+  -- Same correction as `probe`: a deadline whose destination is guarded on a
+  -- fact has one edge per branch, not just the first branch enumerated.
   deadlineEdge decl = case deadlineFor spec decl.id of
-    Nothing -> Nothing
-    Just d -> case Array.head (Array.filter isMove (map (\w -> resolve spec w decl.id d.fires) worlds)) of
-      Just (Move to) -> Just
-        { from: decl.id, to, events: [ d.fires ], kind: OnDeadline, reason: Nothing }
-      _ -> Nothing
+    Nothing -> []
+    Just d -> map
+      (\to -> { from: decl.id, to, events: [ d.fires ], kind: OnDeadline, reason: Nothing })
+      (nub (Array.mapMaybe movedTo (map (\w -> resolve spec w decl.id d.fires) worlds)))
 
 -- | Every way the listed facts could be reported, as worlds.
 -- |
