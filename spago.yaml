@@ -1,7 +1,12 @@
 workspace:
   packageSet:
-    registry: 77.13.1
+    registry: 80.8.0
   extraPackages:
+    # Both load-bearing against package set 80.8.0, which carries the
+    # published 0.3.0 of each. hylograph-graph is pinned because
+    # `Data.Graph.InducedTree` post-dates its v0.3.0 tag; hylograph-layout
+    # because it consumes that module and is itself ahead of its own tag.
+    # Drop both once the two are republished.
     hylograph-layout:
       path: ../purescript-hylograph-layout
     hylograph-graph:
