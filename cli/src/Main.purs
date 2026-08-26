@@ -29,11 +29,12 @@ import Effect (Effect)
 import Effect.Console (error, log)
 import Glassbox.Codec.JSON (parseSpec)
 import Glassbox.Canonical (canonicalBytes)
+import Glassbox.Export.Embed (embedModule)
 import Glassbox.DSL.Print (renderAll)
 import Glassbox.Edges (defaultOptions, edgesOf)
 import Glassbox.Export.StateDiagram (toStateDiagram)
 import Glassbox.Run (worldFrom)
-import Glassbox.Export.PureScript (vocabularyModule)
+import Glassbox.Export.PureScript (moduleNameFor, vocabularyModule)
 import Glassbox.Lint (explain, lint, rejections, warnings)
 import Glassbox.Spec (Spec)
 import Node.Encoding (Encoding(..))
@@ -48,6 +49,8 @@ main = do
   case drop2 args of
     [ "lint", inDir ] -> lintCmd inDir
     [ "canonical", inDir ] -> canonicalCmd inDir
+    [ "embed", inDir, outDir, prefix ] -> embedCmd inDir outDir prefix defaultRegenerate
+    [ "embed", inDir, outDir, prefix, how ] -> embedCmd inDir outDir prefix how
     [ "render-all", inDir, outDir ] -> renderAllCmd inDir outDir
     [ "vocabulary", inDir, outDir, prefix ] ->
       vocabularyCmd inDir outDir prefix defaultRegenerate
@@ -68,6 +71,10 @@ usage = do
   error ""
   error "  render-all <machines-dir> <out-dir>"
   error "      every machine in every candidate syntax (Blocks, Table) and as a state diagram"
+  error ""
+  error "  embed <machines-dir> <out-dir> <module-prefix> [regen-command]"
+  error "      each machine's artifact verbatim, as a PureScript string, for a host"
+  error "      that cannot open a file. An ordinary host should read the file instead."
   error ""
   error "  vocabulary <machines-dir> <out-dir> <module-prefix> [regen-command]"
   error "      each machine's alphabet as a PureScript module of rows."
@@ -140,6 +147,29 @@ renderAllCmd inDir outDir = do
 
 defaultRegenerate :: String
 defaultRegenerate = "spago run -p glassbox-cli -- vocabulary <machines> <out> <prefix>"
+
+-- | The artifact itself, as a module, for the hosts that cannot read a file.
+-- |
+-- | Reads the file TWICE and deliberately: once through `readMachines`, which
+-- | decodes it, so a machine that does not parse is rejected here rather than
+-- | embedded and rejected later on somebody else's runtime; and once raw, so
+-- | what gets embedded is the file rather than the codec's understanding of it.
+embedCmd :: FilePath -> FilePath -> String -> String -> Effect Unit
+embedCmd inDir outDir prefix how = do
+  machines <- readMachines inDir
+  ensureDir outDir
+  for_ machines \{ name, spec } -> do
+    artifact <- readTextFile UTF8 (concat [ inDir, name <> ".json" ])
+    let
+      file = moduleNameFor spec <> "Source.purs"
+      content = embedModule
+        { moduleName: prefix <> "." <> moduleNameFor spec <> "Source"
+        , source: lastSegment inDir <> "/" <> name <> ".json"
+        , regenerate: how
+        , artifact
+        }
+    writeTextFile UTF8 (concat [ outDir, file ]) content
+    log $ name <> ".json  ->  " <> concat [ outDir, file ]
 
 vocabularyCmd :: FilePath -> FilePath -> String -> String -> Effect Unit
 vocabularyCmd inDir outDir prefix how = do
