@@ -1,0 +1,1050 @@
+/* Plate — Glassbox machines, typeset.
+ *
+ * The design brief in one line: make a WRONG CELL pop out.
+ *
+ * Everything below follows from that. The four outcome kinds are separated by
+ * GROUND rather than by punctuation, so a grid reads as a field before it reads
+ * as a table — a supervisor's band of refusals and a heating controller's
+ * column of faults are shapes you see before you read a word. Stays are 40% of
+ * every corpus grid, so they are set to recede; moves are the substance, so
+ * they are the only cells in full ink; and a pair nobody wrote down is hatched,
+ * because absence is the one kind of error a list cannot show at all.
+ *
+ * Colour is used four times and each use is a fact about the content:
+ *   signal  refusal        something forbade this
+ *   guard   guarded cell   the answer depends on the world
+ *   auto    runtime side   this happens with nobody pressing anything
+ *   lit     cross-ref      you are pointing at this
+ * There is no fifth. Nothing here is coloured to look designed.
+ */
+
+/* ------------------------------------------------------------------ tokens */
+
+:root {
+  color-scheme: light dark;
+
+  --paper:      #EFF1EE;
+  --plate:      #FBFCFA;
+  --sunk:       #E7EAE6;
+  --stay-bed:   #EBEEEA;
+
+  --ink:        #14181A;
+  --ink-2:      #4E555A;
+  --ink-3:      #838C91;
+  --ink-4:      #AFB7B9;
+  --rule:       #C0C7C3;
+  --hairline:   #DFE3DF;
+
+  --signal:      #A81D22;
+  --signal-wash: #F7E9E7;
+  --guard:       #7E5200;
+  --guard-wash:  #F6EFDE;
+  --auto:        #14548C;
+  --auto-wash:   #E6EDF4;
+
+  --lit:         #14548C;
+  --lit-wash:    #DCE8F3;
+
+  --hatch:       rgba(20, 24, 26, 0.16);
+
+  --measure:     78rem;
+  --spine:       12.5rem;
+
+  --sans: 'Archivo', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:      #0F1214;
+    --plate:      #171B1D;
+    --sunk:       #1C2123;
+    --stay-bed:   #1B2022;
+
+    --ink:        #E9ECEA;
+    --ink-2:      #A5AEB0;
+    --ink-3:      #788285;
+    --ink-4:      #576063;
+    --rule:       #333B3E;
+    --hairline:   #232A2C;
+
+    --signal:      #FF8078;
+    --signal-wash: #2C1D1C;
+    --guard:       #E0AC55;
+    --guard-wash:  #2A2317;
+    --auto:        #74B2E8;
+    --auto-wash:   #182430;
+
+    --lit:         #8FC4F5;
+    --lit-wash:    #1B2A38;
+
+    --hatch:       rgba(233, 236, 234, 0.14);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper:      #0F1214;
+  --plate:      #171B1D;
+  --sunk:       #1C2123;
+  --stay-bed:   #1B2022;
+
+  --ink:        #E9ECEA;
+  --ink-2:      #A5AEB0;
+  --ink-3:      #788285;
+  --ink-4:      #576063;
+  --rule:       #333B3E;
+  --hairline:   #232A2C;
+
+  --signal:      #FF8078;
+  --signal-wash: #2C1D1C;
+  --guard:       #E0AC55;
+  --guard-wash:  #2A2317;
+  --auto:        #74B2E8;
+  --auto-wash:   #182430;
+
+  --lit:         #8FC4F5;
+  --lit-wash:    #1B2A38;
+
+  --hatch:       rgba(233, 236, 234, 0.14);
+}
+
+/* ------------------------------------------------------------------- reset */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; scroll-padding-top: 2rem; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; animation: none !important; }
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.9375rem;
+  font-weight: 400;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+main#plate {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 5rem 2rem 7rem;
+}
+
+p { margin: 0 0 0.9em; max-width: 40rem; }
+code, .mono { font-family: var(--mono); font-feature-settings: "zero" 1; }
+/* No pill. Prose in this document is a third code by volume, and a tinted box
+ * round every identifier turns a paragraph into a rash. The mono face against
+ * Archivo is already all the contrast the distinction needs. */
+code {
+  font-size: 0.92em;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+a { color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--lit);
+  outline-offset: 2px;
+}
+
+.section-title, .sub-title {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--ink-3);
+  margin: 0 0 1.1rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+.sub-note {
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ink-3);
+  font-size: 0.75rem;
+}
+
+/* ---------------------------------------------------------------- masthead */
+
+.masthead { margin: 0 0 5.5rem; }
+
+.kicker {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  color: var(--ink-3);
+  margin-bottom: 1.2rem;
+}
+
+.title {
+  font-family: var(--sans);
+  font-variation-settings: 'wdth' 122;
+  font-weight: 800;
+  font-size: clamp(4rem, 15vw, 11rem);
+  line-height: 0.82;
+  letter-spacing: -0.045em;
+  margin: 0 0 1.6rem;
+  text-wrap: balance;
+}
+
+.deck {
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--ink-2);
+  max-width: 42rem;
+  margin: 0 0 2.6rem;
+}
+.deck em { font-style: normal; font-weight: 600; color: var(--ink); }
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 2.75rem;
+  margin: 0;
+  padding-top: 1.1rem;
+  border-top: 2px solid var(--ink);
+}
+.stat dt {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-3);
+  margin-bottom: 0.15rem;
+}
+.stat dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 1.375rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+/* --------------------------------------------------------------------- key */
+
+.key { margin: 0 0 5rem; }
+.key-lede { color: var(--ink-2); max-width: 42rem; margin-bottom: 2rem; }
+
+.key-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: 1.6rem 2.5rem;
+}
+.key-item { display: flex; gap: 1rem; align-items: flex-start; }
+.key-sample { flex: 0 0 8.5rem; }
+.key-sample table { border-collapse: collapse; width: 100%; }
+.key-sample td { border: 1px solid var(--hairline); }
+.key-name {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+.key-body p { font-size: 0.8125rem; line-height: 1.5; color: var(--ink-2); margin: 0; }
+
+.key-foot {
+  margin-top: 2rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+  max-width: none;
+}
+.mk { font-family: var(--mono); font-weight: 600; }
+.mk-initial, .mk-timed { color: var(--auto); }
+.mk-final { color: var(--ink); }
+
+/* ---------------------------------------------------------------- contents */
+
+.contents { margin: 0 0 6rem; }
+.contents-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+@media (max-width: 56rem) { .contents-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 34rem) { .contents-grid { grid-template-columns: 1fr; } }
+.card {
+  background: var(--plate);
+  padding: 1.1rem 1.1rem 0.9rem;
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  transition: background 120ms;
+}
+.card:hover { background: var(--sunk); }
+.card-name {
+  font-variation-settings: 'wdth' 108;
+  font-weight: 600;
+  font-size: 1.0625rem;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+.card-id { font-family: var(--mono); font-size: 0.6875rem; color: var(--ink-3); }
+.card-dim {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-2);
+  margin-top: auto;
+  padding-top: 0.7rem;
+}
+.card-bar { display: flex; height: 5px; margin-top: 0.4rem; gap: 1px; }
+.b { display: block; min-width: 2px; }
+.b-move   { background: var(--ink); }
+.b-guard  { background: var(--guard); }
+.b-refuse { background: var(--signal); }
+.b-stay   { background: var(--ink-4); }
+.b-absent { background: var(--hatch); }
+
+/* --------------------------------------------------------------- the plate */
+
+.plate {
+  background: var(--plate);
+  border: 1px solid var(--rule);
+  padding: 2.5rem 2.25rem 2.75rem;
+  margin: 0 0 3.5rem;
+}
+
+.plate-head {
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 1rem;
+  margin-bottom: 1.75rem;
+}
+.plate-title {
+  font-variation-settings: 'wdth' 112;
+  font-weight: 700;
+  font-size: clamp(1.9rem, 4vw, 2.75rem);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  margin: 0 0 0.7rem;
+  text-wrap: balance;
+}
+.plate-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 1.4rem;
+  font-size: 0.75rem;
+}
+.plate-meta .strong { font-weight: 600; }
+.meta-item { display: inline-flex; gap: 0.4rem; align-items: baseline; }
+.meta-k {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-3);
+}
+.meta-v { color: var(--ink-2); }
+
+.plate-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 2.5rem;
+  margin-bottom: 2rem;
+}
+@media (max-width: 60rem) {
+  .plate-body { grid-template-columns: 1fr; gap: 1.75rem; }
+}
+
+.notes { font-size: 0.8125rem; line-height: 1.62; color: var(--ink-2); }
+.notes p { max-width: 36rem; }
+.notes p:first-child::first-letter {
+  font-variation-settings: 'wdth' 100;
+  font-weight: 700;
+  font-size: 2.5em;
+  line-height: 0.84;
+  float: left;
+  padding: 0.04em 0.05em 0 0;
+  color: var(--ink);
+}
+.notes code { color: var(--ink); }
+
+/* ------------------------------------------------------------- the checks */
+
+.audit {
+  background: var(--sunk);
+  border-top: 2px solid var(--ink);
+  padding: 0.9rem 1rem 1rem;
+  align-self: start;
+}
+.audit-title {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 600;
+  color: var(--ink-3);
+  margin-bottom: 0.6rem;
+}
+.audit-items { display: flex; flex-direction: column; gap: 0.4rem; }
+.check {
+  display: grid;
+  grid-template-columns: 5.2rem 1rem 1fr;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+.check-name {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+}
+.check-mark { font-family: var(--mono); font-weight: 600; }
+.check.ok .check-mark { color: var(--ink-3); }
+.check.flag .check-mark { color: var(--signal); }
+.check.flag .check-say { color: var(--signal); font-weight: 500; }
+.check-say { color: var(--ink-2); }
+
+.findings {
+  list-style: none;
+  margin: 0.8rem 0 0;
+  padding: 0.7rem 0 0;
+  border-top: 1px solid var(--rule);
+  font-size: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.findings li { display: grid; grid-template-columns: 7rem 1fr; gap: 0.5rem; }
+.finding-lint { font-size: 0.6875rem; color: var(--ink-3); }
+.findings .reject .finding-lint { color: var(--signal); }
+
+/* ---------------------------------------------------------------- the grid */
+
+.grid-wrap { margin: 0 0 2.25rem; }
+
+.grid-tools {
+  display: flex;
+  align-items: baseline;
+  gap: 1.2rem;
+  padding-bottom: 0.5rem;
+}
+.tools-label {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 600;
+  color: var(--ink-3);
+  margin-right: auto;
+}
+.tool {
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1px;
+}
+.tool:hover { color: var(--ink); border-bottom-color: var(--ink); }
+.tool[aria-pressed="true"] {
+  color: var(--auto);
+  border-bottom-color: var(--auto);
+  font-weight: 600;
+}
+
+.grid-scroll {
+  overflow-x: auto;
+  border-top: 2px solid var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+
+table.grid {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--mono);
+}
+
+/* Column heads: the id in ink, its label and its source quiet beneath. The
+ * hairline at .newsource is the one division the columns really have — who
+ * delivers the event. */
+th.colhead {
+  vertical-align: bottom;
+  text-align: left;
+  padding: 0.7rem 0.55rem 0.5rem;
+  border-bottom: 1px solid var(--rule);
+  font-weight: 400;
+  white-space: nowrap;
+}
+th.colhead.newsource, td.newsource { border-left: 1px solid var(--rule); }
+.col-id {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.col-label {
+  display: block;
+  font-family: var(--sans);
+  font-size: 0.6875rem;
+  color: var(--ink-2);
+  line-height: 1.25;
+  max-width: 8rem;
+  white-space: normal;
+}
+.col-src {
+  display: block;
+  font-family: var(--sans);
+  font-size: 0.5625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-4);
+  margin-top: 0.2rem;
+}
+th.colhead.src-runtime .col-src { color: var(--auto); }
+
+th.corner {
+  text-align: left;
+  vertical-align: bottom;
+  padding: 0.7rem 0.7rem 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--sans);
+  font-size: 0.5625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 600;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.corner-x { color: var(--ink-4); margin: 0 0.25rem; }
+
+/* Row heads: the state, then what entering and leaving it costs the host. */
+/* Pinned, so the slack in a full-width table goes to the CELLS. Left to
+ * itself the row head wins every extra pixel — it carries the most text —
+ * and the grid it is a head of ends up squeezed against the right margin. */
+th.rowhead {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.5rem 2.5rem 0.5rem 0;
+  border-bottom: 1px solid var(--hairline);
+  font-weight: 400;
+  width: 15.5rem;
+  max-width: 15.5rem;
+  position: relative;
+}
+.rh-line { display: flex; align-items: baseline; gap: 0.35rem; flex-wrap: wrap; }
+.rh-mark {
+  width: 0.75rem;
+  color: var(--auto);
+  font-size: 0.75rem;
+  flex: 0 0 auto;
+}
+.is-initial .rh-mark { color: var(--auto); }
+.rh-id {
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  border-bottom: 1px dotted transparent;
+}
+.rh-id:hover { border-bottom-color: var(--lit); color: var(--lit); }
+.rh-label {
+  font-family: var(--sans);
+  font-size: 0.6875rem;
+  color: var(--ink-3);
+}
+.rh-cmds, .rh-deadline {
+  font-size: 0.6875rem;
+  color: var(--ink-2);
+  line-height: 1.35;
+  margin-top: 0.1rem;
+  padding-left: 1.1rem;
+}
+.rh-deadline { font-size: 0.625rem; }
+.rh-deadline .mono, .rh-cmds .cmd { white-space: nowrap; }
+.rh-cmdk, .fires {
+  font-family: var(--sans);
+  font-size: 0.5625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-4);
+  margin-right: 0.35rem;
+}
+.rh-exit .rh-cmdk { color: var(--ink-4); }
+.cmd { border-bottom: 1px dotted transparent; }
+.rh-deadline { color: var(--auto); }
+.rh-deadline .unit { font-family: var(--sans); font-size: 0.625rem; margin: 0 0.3rem 0 0.15rem; }
+.rh-inbound {
+  position: absolute;
+  right: 0.3rem;
+  top: 0.55rem;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  color: var(--ink-4);
+  letter-spacing: -0.03em;
+}
+.rh-inbound.none { color: var(--signal); font-weight: 600; }
+
+/* -- the cells ----------------------------------------------------------- */
+
+td.c {
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  vertical-align: top;
+  white-space: nowrap;
+  position: relative;
+  min-width: 4.5rem;
+}
+
+/* MOVE — the plate's own ground and full ink. The substance of the machine. */
+td.c-move .move, td.c-turn .move {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  border-bottom: 1px dotted transparent;
+}
+td.c-move .move:hover, td.c-turn .move:hover { color: var(--lit); border-bottom-color: var(--lit); }
+
+/* TURN — a move to the state it is already in. Exits and re-enters. */
+td.c-turn { background: var(--auto-wash); }
+.turn { color: var(--auto); margin-left: 0.25rem; font-size: 0.75rem; }
+
+/* STAY — 40% of every grid in the corpus, so it is bedded down. */
+td.c-stay { background: var(--stay-bed); }
+.dot { color: var(--ink-4); }
+
+/* REFUSE — something forbade it. Not the same as doing nothing. */
+td.c-refuse { background: var(--signal-wash); color: var(--signal); }
+.bang { font-weight: 600; margin-right: 0.05rem; }
+.refusal { font-size: 0.75rem; }
+
+/* GUARD — the answer depends on the world; the ladder is below. */
+td.c-guard { background: var(--guard-wash); }
+.chip {
+  display: inline-block;
+  min-width: 1.15rem;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--guard);
+  border: 1px solid var(--guard);
+  border-radius: 2px;
+  padding: 0 0.15rem;
+  text-decoration: none;
+  line-height: 1.5;
+}
+.chip:hover, .chip.lit { background: var(--guard); color: var(--plate); }
+
+/* ABSENT — nobody wrote this pair down. The ground is what says so. */
+td.c-absent { background: transparent; }
+.hole {
+  display: block;
+  height: 1.1rem;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--hatch) 0 1px,
+    transparent 1px 5px
+  );
+}
+
+/* A pair that also fires on a deadline, with nobody pressing anything. */
+td.timed::before {
+  content: "◷";
+  position: absolute;
+  top: 0.18rem;
+  right: 0.2rem;
+  font-size: 0.625rem;
+  color: var(--auto);
+}
+
+/* -- the crosshair, and the cross-reference ------------------------------ */
+
+tr.gridrow:hover th.rowhead { background: var(--sunk); }
+td.c.hot, th.colhead.hot { box-shadow: inset 0 0 0 1px var(--ink-4); }
+
+td.c.lit, .rh-id.lit, dt.lit, .case.lit, .cmd.lit, .ref.lit {
+  box-shadow: inset 0 0 0 2px var(--lit);
+}
+td.c.lit { background: var(--lit-wash); }
+.rh-id.lit, dt.lit, .cmd.lit, .ref.lit {
+  box-shadow: none;
+  color: var(--lit);
+  background: var(--lit-wash);
+  border-bottom-color: var(--lit);
+}
+tr.gridrow.lit-row th.rowhead { background: var(--lit-wash); box-shadow: inset 3px 0 0 var(--lit); }
+.case.lit { background: var(--lit-wash); }
+
+/* -- guarded cells opened in place --------------------------------------- */
+
+.pop { display: none; }
+.pop-head { display: none; }
+.grid.with-cases td.c-guard { white-space: normal; }
+.grid.with-cases .pop { display: block; margin-top: 0.35rem; }
+.grid.with-cases .pop .ladder { font-size: 0.6875rem; }
+
+/* --------------------------------------------------------------- the cases */
+
+.cases { margin: 0 0 2.25rem; }
+.cases-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+  gap: 1.1rem 2.5rem;
+}
+.case { padding: 0.5rem 0.6rem; margin: -0.5rem -0.6rem; }
+.case-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+.chip.static { cursor: default; }
+.on {
+  font-family: var(--sans);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* The ladder is a four-column grid so `when`, the guard, the arrow and the
+ * outcome line up down the whole block — first-match-wins is an ordered
+ * reading, and an ordered reading wants a left edge. */
+.ladder {
+  display: grid;
+  grid-template-columns: 2.6rem auto 0.9rem auto;
+  justify-content: start;
+  gap: 0.1rem 0.6rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  align-items: baseline;
+}
+.rung { display: contents; }
+.kw {
+  font-family: var(--sans);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+}
+.kw-when { color: var(--ink-2); font-weight: 600; }
+.kw-else { color: var(--ink-4); }
+.guard { color: var(--ink-2); white-space: normal; }
+.op {
+  font-family: var(--sans);
+  font-size: 0.6875rem;
+  color: var(--ink-4);
+  margin: 0 0.25rem;
+  text-transform: lowercase;
+}
+.op.cmp { font-family: var(--mono); color: var(--ink-3); }
+.ref { border-bottom: 1px dotted var(--ink-4); }
+.ref:hover { color: var(--lit); border-bottom-color: var(--lit); }
+.lit-word { color: var(--ink); }
+.arrow { color: var(--ink-4); }
+.outcome .move { font-weight: 500; }
+.outcome .move.self { color: var(--auto); }
+.stay-word { color: var(--ink-4); }
+.refuse-word {
+  font-family: var(--sans);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--signal);
+  margin-right: 0.3rem;
+}
+.outcome .refusal { color: var(--signal); }
+
+/* ------------------------------------------------------------- the drawing */
+
+/* The picture is a FIGURE, not the plate: it sits inside a hairline box, at a
+ * smaller measure than the grid, because it is the second reading of a machine
+ * and the grid is the first. Where a host renders Mermaid, the box holds an
+ * SVG; where it does not, the box holds the diagram's own source — the same
+ * second opinion, one medium down. Nothing is fetched in either case.
+ */
+
+.diagram { margin: 0 0 2.25rem; }
+
+pre.mermaid {
+  margin: 0;
+  padding: 1.25rem 1.25rem 1.1rem;
+  background: var(--plate);
+  border: 1px solid var(--hairline);
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  color: var(--ink-3);
+  white-space: pre;
+  tab-size: 4;
+}
+
+pre.mermaid svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Mermaid's theme is chosen at parse time and the greyscale one is a LIGHT
+ * theme, so on a dark plate the drawing would arrive dark-on-dark. A greyscale
+ * picture inverts exactly — no hue to rotate — which is why the diagram was
+ * asked for in grey rather than in the renderer's default palette. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) pre.mermaid svg { filter: invert(1); }
+}
+:root[data-theme="dark"] pre.mermaid svg { filter: invert(1); }
+
+.diagram-cap {
+  margin: 0.55rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.55;
+  color: var(--ink-3);
+  max-width: 44rem;
+}
+.diagram-cap code { color: var(--ink-2); }
+.cap-flag {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--signal);
+  margin-right: 0.3rem;
+}
+.cap-link {
+  color: var(--signal);
+  font-weight: 500;
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+}
+
+/* ------------------------------------------------------ the authoring form */
+
+/* Nine rules in ten are one-liners, so this sets in a narrow column and reads
+ * DOWN. It is open by default — a rendering the page claims to carry should
+ * not need a click to exist — and closes for a reader who is skimming grids.
+ */
+
+.rules { margin: 0 0 2.25rem; }
+.rules > summary { list-style: none; cursor: pointer; }
+.rules > summary::-webkit-details-marker { display: none; }
+.rules > summary .sub-title { margin-bottom: 1.1rem; }
+.rules > summary .sub-title::after {
+  content: "▾";
+  margin-left: auto;
+  color: var(--ink-4);
+  font-size: 0.6875rem;
+  letter-spacing: 0;
+}
+.rules:not([open]) > summary .sub-title::after { content: "▸"; }
+.rules:not([open]) > summary .sub-title { margin-bottom: 0; }
+
+.blocks {
+  margin: 0;
+  padding: 1.15rem 1.35rem;
+  background: var(--plate);
+  border: 1px solid var(--hairline);
+  max-width: 44rem;
+  overflow-x: auto;
+  font-size: 0.6875rem;
+  line-height: 1.62;
+  color: var(--ink-2);
+  tab-size: 2;
+}
+
+/* Typographic weight only. A comment recedes, a flush-left line is a heading,
+ * an indented line is the body of a block — which is the shape `Blocks` was
+ * designed to have, and the only thing a stylesheet can honestly know about it
+ * without parsing the machine a second time. */
+.bl-note { color: var(--ink-4); }
+.bl-head { color: var(--ink); font-weight: 500; }
+.bl-body { color: var(--ink-2); }
+
+/* ----------------------------------------------------------- the deadlines */
+
+.deadlines { margin: 0 0 2.25rem; }
+.deadline-list { display: flex; flex-direction: column; gap: 0.35rem; }
+.deadline {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+}
+.deadline .unit {
+  font-family: var(--sans);
+  font-size: 0.6875rem;
+  color: var(--ink-3);
+}
+
+/* --------------------------------------------------------- the vocabularies */
+
+.vocab { margin: 0; }
+.vocab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 1.6rem 2.5rem;
+}
+.gloss-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+.gloss-name {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.gloss-count {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  color: var(--ink-4);
+  margin-left: auto;
+}
+.gloss dl { margin: 0; }
+.gloss dt {
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-top: 0.4rem;
+  position: relative;
+  display: inline-block;
+  border-bottom: 1px dotted transparent;
+}
+.gloss dt:first-child { margin-top: 0; }
+.gloss dt:hover { color: var(--lit); border-bottom-color: var(--lit); cursor: default; }
+.gloss dd {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.gloss .dead { color: var(--ink-4); }
+.deadmark {
+  position: absolute;
+  left: -0.85rem;
+  color: var(--signal);
+  font-size: 0.625rem;
+}
+
+/* ------------------------------------------------------------------- spine */
+
+.spine {
+  position: fixed;
+  top: 5rem;
+  left: max(1rem, calc(50vw - 39rem - 14rem));
+  width: var(--spine);
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  z-index: 5;
+}
+.spine-top {
+  font-variation-settings: 'wdth' 118;
+  font-weight: 800;
+  font-size: 0.875rem;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+  margin-bottom: 0.9rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--ink);
+}
+.spine-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  text-decoration: none;
+  font-size: 0.75rem;
+  color: var(--ink-3);
+  padding: 0.18rem 0;
+  border-left: 2px solid transparent;
+  padding-left: 0.5rem;
+  transition: color 120ms, border-color 120ms;
+}
+.spine-item:hover { color: var(--ink); }
+.spine-item.here { color: var(--ink); border-left-color: var(--ink); font-weight: 600; }
+.spine-name { line-height: 1.2; }
+.spine-dim { margin-left: auto; font-size: 0.625rem; color: var(--ink-4); }
+
+@media (max-width: 87.5rem) { .spine { display: none; } }
+
+/* ---------------------------------------------------------------- colophon */
+
+.colophon {
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+  border-top: 2px solid var(--ink);
+}
+.colophon p { font-size: 0.8125rem; color: var(--ink-2); max-width: 38rem; }
+.col-set { color: var(--ink-3); }
+
+/* ------------------------------------------------------------------ narrow */
+
+@media (max-width: 40rem) {
+  main#plate { padding: 3rem 1rem 4rem; }
+  .plate { padding: 1.5rem 1rem 1.75rem; margin-left: -1rem; margin-right: -1rem; border-left: 0; border-right: 0; }
+  .stats { gap: 0 1.5rem; }
+  .stat dd { font-size: 1.125rem; }
+}
+
+/* ------------------------------------------------- what setting them found */
+
+.found { margin: 5rem 0 4rem; }
+.found-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2.25rem 3.5rem;
+}
+@media (max-width: 52rem) { .found-grid { grid-template-columns: 1fr; } }
+.found-item { display: grid; grid-template-columns: 4.75rem 1fr; gap: 1rem; align-items: start; }
+.found-num {
+  font-size: 2rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  text-align: right;
+  padding-top: 0.1rem;
+}
+.found-num.bad { color: var(--signal); }
+.found-item p { font-size: 0.8125rem; line-height: 1.55; color: var(--ink-2); margin: 0; max-width: none; }
+.found-item strong { color: var(--ink); font-weight: 600; }
+
+.findings.missing li { grid-template-columns: 5.5rem 1fr; font-size: 0.6875rem; }
+.findings.missing .finding-lint { color: var(--signal); }
+
+.found-ref { text-decoration: none; border-bottom: 1px solid var(--rule); }
+.found-ref code { color: var(--ink); }
+
+/* An arm behind a config read is missing from the edge set and BELONGS there.
+ * It is set with no flag colour and a dotted rule for exactly that reason: the
+ * page would be lying about a defect if it drew this the same way. */
+.suppressed { margin-top: 0.75rem; }
+.suppressed .findings {
+  margin-top: 0;
+  padding-top: 0.6rem;
+  border-top: 1px dotted var(--rule);
+}
+.suppressed .findings li { grid-template-columns: 5.5rem 1fr; font-size: 0.6875rem; }
+.suppressed .finding-lint { color: var(--ink-3); }
+.suppressed .findings .mono { color: var(--ink-3); }
+.suppressed-say {
+  margin: 0.5rem 0 0;
+  max-width: none;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.suppressed-say code { color: var(--ink-2); }
