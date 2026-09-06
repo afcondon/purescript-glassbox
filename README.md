@@ -237,6 +237,17 @@ duration until somebody says what the tempo is. The question parked behind
 that `Nothing` — when the tempo changes while a state is pending, does the
 deadline move? — is deliberately open until a musical host needs it.
 
+## Two runtimes
+
+`rust/glassbox-rs` is the same format in Rust — `spec`, `codec`, `run`,
+`drive`, `canonical`, transcribed decision for decision — for a host that
+cannot run JavaScript; the looper daemon is the first. It is held to this
+runtime by data: `make vectors` writes every (state × event ×
+guard-assignment) of every machine and what `Glassbox.Run.step` answers to
+`conformance/vectors/`, and `cargo test` there replays the lot. Schema in
+`conformance/README.md`; the story, the numbers and the open questions in
+`docs/rust-runtime.md`.
+
 ## Tests
 
 ```sh
