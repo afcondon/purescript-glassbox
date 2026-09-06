@@ -71,9 +71,10 @@ readMachine name = do
   here <- exists local
   readTextFile UTF8 (if here then local else fromRoot)
 
--- | The five artifacts every corpus-wide check runs over.
+-- | The artifacts every corpus-wide check runs over. `itajara-loop` is the
+-- | sixth: the looper daemon's phase machine, written for the Rust runtime.
 corpus :: Array String
-corpus = [ "loop.json", "car-radio.json", "elevator.json", "washing-machine.json", "heating.json" ]
+corpus = [ "loop.json", "car-radio.json", "elevator.json", "washing-machine.json", "heating.json", "itajara-loop.json" ]
 
 loadOrDie :: String -> Effect Spec
 loadOrDie name = do
