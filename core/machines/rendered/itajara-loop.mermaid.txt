@@ -4,6 +4,7 @@ stateDiagram-v2
     tape : Threaded tape  (entry thread-tape)
     armed_by_level : Listening for a sound  (entry listen, exit release-input)
     armed_for_grid : Waiting for the bar  (entry request-at-boundary, exit cancel-request)
+    armed_by_sound : Sound found, waiting for the bar  (entry request-at-boundary, exit release-input cancel-request)
     recording_open : Recording, open  (entry start-take, exit close-take)
     recording_sized : Recording, sized  (entry start-take arm-close, exit close-take)
     overdubbing_open : Overdubbing  (entry start-layer, exit close-layer)
@@ -39,15 +40,20 @@ stateDiagram-v2
     armed_by_level --> overdubbing_open : a sound crossed the threshold
     armed_by_level --> recording_sized : a sound crossed the threshold
     armed_by_level --> overdubbing_one_pass : a sound crossed the threshold
-    armed_by_level --> armed_for_grid : a sound crossed the threshold
+    armed_by_level --> armed_by_sound : a sound crossed the threshold
     armed_for_grid --> empty : clear (c), the audio device was lost
     armed_for_grid --> recording_open : the bar line arrived
-    armed_for_grid --> overdubbing_open : the bar line arrived
     armed_for_grid --> recording_sized : the bar line arrived
-    armed_for_grid --> overdubbing_one_pass : the bar line arrived
-    armed_for_grid --> playing : the audio device was lost
-    armed_for_grid --> tape : the audio device was lost
     armed_for_grid --> sized : the audio device was lost
+    armed_by_sound --> empty : clear (c), level-arm off (lev0), record (r)
+    armed_by_sound --> playing : level-arm off (lev0), record (r)
+    armed_by_sound --> tape : level-arm off (lev0), record (r)
+    armed_by_sound --> sized : level-arm off (lev0), record (r)
+    armed_by_sound --> recording_open : the bar line arrived
+    armed_by_sound --> overdubbing_open : the bar line arrived
+    armed_by_sound --> recording_sized : the bar line arrived
+    armed_by_sound --> overdubbing_one_pass : the bar line arrived
+    armed_by_sound --> armed_by_level : the audio device was lost
     recording_open --> playing : record (r)
     recording_open --> empty : clear (c), the audio device was lost
     recording_sized --> playing : the take reached its length, record (r)

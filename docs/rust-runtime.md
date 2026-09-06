@@ -52,7 +52,7 @@ pin the one machine it was built against by its canonical text.
 
 ## Numbers
 
-Six machines, 597 vectors, 5 alarms, all replayed identically; every
+Six machines, 622 vectors, 5 alarms, all replayed identically; every
 machine's canonical text byte-identical between the two runtimes; every
 machine round-trips through the Rust codec (compact and indented).
 
@@ -60,7 +60,7 @@ machine round-trips through the Rust codec (compact and indented).
 car-radio          34 vectors  1 alarm
 elevator           67 vectors  1 alarm
 heating            56 vectors  1 alarm
-itajara-loop      328 vectors  0 alarms
+itajara-loop      353 vectors  0 alarms
 loop               33 vectors  2 alarms
 washing-machine    79 vectors  0 alarms
 ```
@@ -135,6 +135,18 @@ constructors. `itajara-loop.json` is that enum as data, and the crate is the
    its `step` call, the way `check-verbs.py` and `check-snapshot.py` already
    hold the two sides together from outside. The crate's test proves the
    runtime; the daemon's test proves the wiring.
+
+   **Done first, and before steps 1–4 (2026-09-06, the daemon's step 5b):**
+   `daemon/src/engine/conformance.rs` replays the vectors through the
+   engine *as it is* — the byte and the flags read into an artifact state
+   by one function, each event delivered the way the daemon delivers it —
+   and holds every outcome, state and refusal tag. 339 of 353 replayed;
+   the 14 skipped say `has-layers` and not `has-length`, which no loop can
+   be. Every mismatch the first run found is reconciled: the daemon
+   gained the guards this artifact was prescriptive about and a cancelled
+   arm that returns to what the loop held; the artifact gained
+   `armed-by-sound` and a `no-grid` refusal for `len` on material. The
+   table is now what the daemon is tested against.
 
 6. **The pedalboard reads the same file.** `Socket.phaseOf` and
    `Machine.perform`'s guards are the PureScript half of the same machine;
@@ -222,19 +234,26 @@ these are what it could not settle):
   its bookkeeping regardless. That is consistent with "the host holds the
   memory" and it means a `stay` is not "nothing happened" at the verb level
   — only at the phase level.
-- **It is prescriptive** where the daemon has no guard: `u`, `x`, `z` and
+- **It was prescriptive** where the daemon had no guard: `u`, `x`, `z` and
   `blank` on an armed loop, `u` and `z` on a recording one, all refuse
-  `still-recording`. Adopting the artifact makes those refusals real, which
-  is intended, and should be said in the ack.
+  `still-recording`. Adopted 2026-09-06: the daemon guards every one of
+  them (`guards::still_recording`), and the ack says which wait it is.
 - **`lost` on a listening loop** stays listening; on a loop waiting for the
   bar it returns to where it was, because the outage drops every request.
-  That reading of the daemon (`request.take()` for every loop; the armed
-  state untouched) may be wrong in the detail.
+  Measured 2026-09-06: right for both, once the third armed state below
+  existed — a found sound waiting for the bar loses its request and is
+  listening again, `armed-by-sound --lost--> armed-by-level`.
 - **Level-arm and quantise together** wait for the sound and then for the
-  bar — `armed-by-level --sound--> armed-for-grid` — because the input
-  callback applies `next_boundary` to the crossing. The daemon does this
-  regardless of layer count, where a pressed overdub never waits for the
-  bar. Faithful, and possibly not what anybody wants.
+  bar. This was `armed-by-level --sound--> armed-for-grid`, and the replay
+  showed the two waits are not one state: the loop that found its sound
+  still holds the input, a second press cancels it (`armed-for-grid`
+  shrugs a press off), and an outage leaves it listening. So it is
+  `armed-by-sound`, the twelfth state; and since only an empty or sized
+  loop ever waits for the bar without a sound, `armed-for-grid`'s exits
+  read `has-length` alone.
+- **`len` on material asks for a bar** as it does on an empty loop, unless
+  the loop is itself the bar (which is `has-grid` too): `playing --size-->`
+  and `tape --size-->` refuse `no-grid` without one. Found by the replay.
 - **The one-pass overdub does not wait for the loop's zero**, per the
   daemon's 2026-09 decision; the artifact follows it. If that decision is
   revisited, `overdubbing-one-pass` gains an armed predecessor.

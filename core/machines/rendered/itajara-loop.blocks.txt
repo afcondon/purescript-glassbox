@@ -12,13 +12,21 @@
 # it changes what the host must do on ENTRY or what more than one event does;
 # it is a fact when only a guard reads it at the moment of a press. So:
 #
-#   * Armed splits in two. Listening for a sound (`lev1`) and waiting for the
-#     bar line (`g1` on an empty loop) enter differently — one claims the
+#   * Armed splits in three. Listening for a sound (`lev1`) and waiting for
+#     the bar line (`g1` on an empty loop) enter differently — one claims the
 #     input and watches it, the other files a request the output callback
 #     will honour — and a second press cancels the first but is a no-op on
 #     the second. The daemon spells the first as ARMED and the second as
 #     IDLE-with-a-request; here both are states, because both are 'about to
-#     record' and neither is idle.
+#     record' and neither is idle. The third is both at once: a listening
+#     loop whose sound has been found while quantise is on files a request
+#     for the bar and KEEPS the input — `armed-by-sound`. It is not
+#     `armed-for-grid`, and the replay of 2026-09-06 (step 5b) is what said
+#     so: a second press cancels it, and an outage drops the request and
+#     leaves it listening, where `armed-for-grid` shrugs off the press and
+#     an outage returns it to rest. Only an empty or sized loop ever waits
+#     for the bar without a sound — a pressed overdub starts on the press —
+#     so `armed-for-grid`'s exits read `has-length` alone.
 #   * Recording splits by whether it closes itself. A first take with a
 #     known length (`fix`, `len`, or a length kept from before) arms
 #     `close_at` on entry and the closer thread delivers `closed`; an open
@@ -78,7 +86,9 @@
 # number the way it keeps every count. The same goes for `undo` on a loop
 # with layers to spare (a layer goes; the phase does not), for `fix` on a
 # loop with material (it sets `one-pass`, a fact), and for `len` on a loop
-# with material (it declares or resizes; the phase does not move).
+# with material (it declares or resizes; the phase does not move — but it
+# asks for a bar first, as it does on an empty loop, unless the loop is
+# itself the bar, which is `has-grid` too; the replay found this).
 #
 # WHERE THIS IS PRESCRIPTIVE. The daemon does not guard `u`, `x`, `z` or
 # `blank` against an armed loop, and does not guard `u` or `z` against a
@@ -87,7 +97,12 @@
 # `still-recording`, which is the tag `fix` already uses for the same case.
 # The daemon also lets `x` on an armed loop abandon the arm and start a
 # multiply; here it refuses. Adopting this artifact makes those refusals
-# real, and that is intended.
+# real, and that is intended. ADOPTED 2026-09-06 (step 5b): the daemon
+# guards every one of them now (`guards::still_recording`), a cancelled
+# arm returns to what the loop held rather than to idle, and
+# `daemon/src/engine/conformance.rs` replays this machine's vectors
+# through the engine — so this table is what the daemon is tested
+# against, not a description of it.
 #
 # REFUSAL TAGS are the daemon's acks: `input-held` ('loop N has the input'),
 # `not-writable` (swinging, or a tape at speed), `not-plain` ('playing at
@@ -106,6 +121,7 @@ states
   tape                  "Threaded tape"
   armed-by-level        "Listening for a sound"
   armed-for-grid        "Waiting for the bar"
+  armed-by-sound        "Sound found, waiting for the bar"
   recording-open        "Recording, open"
   recording-sized       "Recording, sized"
   overdubbing-open      "Overdubbing"
@@ -214,22 +230,24 @@ sized:
 
 tape:
   entry  thread-tape
-  record                                               when input-held-elsewhere  -> refuse input-held
-                                                       elif not writable          -> refuse not-writable
-                                                       elif at-ceiling            -> refuse at-ceiling
-                                                       elif level-arm             -> armed-by-level
-                                                       elif one-pass              -> overdubbing-one-pass
-                                                       else                       -> overdubbing-open
-  multiply                                             when input-held-elsewhere  -> refuse input-held
-                                                       elif not plain             -> refuse not-plain
-                                                       elif at-ceiling            -> refuse at-ceiling
-                                                       else                       -> multiplying
-  undo                                                                            -> sized
-  clear                                                when fixed-rig             -> tape
-                                                       else                       -> empty
-  fix, size, level-off, sound, boundary, closed, lost                             -> stay
-  blank                                                                           -> tape
-  free                                                                            -> refuse has-material
+  record                                         when input-held-elsewhere  -> refuse input-held
+                                                 elif not writable          -> refuse not-writable
+                                                 elif at-ceiling            -> refuse at-ceiling
+                                                 elif level-arm             -> armed-by-level
+                                                 elif one-pass              -> overdubbing-one-pass
+                                                 else                       -> overdubbing-open
+  multiply                                       when input-held-elsewhere  -> refuse input-held
+                                                 elif not plain             -> refuse not-plain
+                                                 elif at-ceiling            -> refuse at-ceiling
+                                                 else                       -> multiplying
+  undo                                                                      -> sized
+  clear                                          when fixed-rig             -> tape
+                                                 else                       -> empty
+  fix, level-off, sound, boundary, closed, lost                             -> stay
+  size                                           when not has-grid          -> refuse no-grid
+                                                 else                       -> stay
+  blank                                                                     -> tape
+  free                                                                      -> refuse has-material
 
 armed-by-level:
   entry  listen
@@ -241,7 +259,7 @@ armed-by-level:
   multiply, undo, fix, size, blank, free                                -> refuse still-recording
   clear                                   when fixed-rig                -> tape
                                           else                          -> empty
-  sound                                   when quantised                -> armed-for-grid
+  sound                                   when quantised                -> armed-by-sound
                                           elif has-layers and one-pass  -> overdubbing-one-pass
                                           elif has-layers               -> overdubbing-open
                                           elif has-length               -> recording-sized
@@ -251,18 +269,31 @@ armed-by-level:
 armed-for-grid:
   entry  request-at-boundary
   exit   cancel-request
-  record, level-off, sound, closed                                      -> stay
+  record, level-off, sound, closed                         -> stay
+  multiply, undo, fix, size, blank, free                   -> refuse still-recording
+  clear                                   when fixed-rig   -> tape
+                                          else             -> empty
+  boundary                                when has-length  -> recording-sized
+                                          else             -> recording-open
+  lost                                    when has-length  -> sized
+                                          else             -> empty
+
+armed-by-sound:
+  entry  request-at-boundary
+  exit   release-input, cancel-request
+  record, level-off                       when threaded and has-layers  -> tape
+                                          elif has-layers               -> playing
+                                          elif has-length               -> sized
+                                          else                          -> empty
   multiply, undo, fix, size, blank, free                                -> refuse still-recording
   clear                                   when fixed-rig                -> tape
                                           else                          -> empty
+  sound, closed                                                         -> stay
   boundary                                when has-layers and one-pass  -> overdubbing-one-pass
                                           elif has-layers               -> overdubbing-open
                                           elif has-length               -> recording-sized
                                           else                          -> recording-open
-  lost                                    when threaded and has-layers  -> tape
-                                          elif has-layers               -> playing
-                                          elif has-length               -> sized
-                                          else                          -> empty
+  lost                                                                  -> armed-by-level
 
 recording-open:
   entry  start-take
@@ -303,22 +334,24 @@ overdubbing-one-pass:
   level-off, sound, boundary                              -> stay
 
 playing:
-  record                                               when input-held-elsewhere  -> refuse input-held
-                                                       elif not writable          -> refuse not-writable
-                                                       elif at-ceiling            -> refuse at-ceiling
-                                                       elif level-arm             -> armed-by-level
-                                                       elif one-pass              -> overdubbing-one-pass
-                                                       else                       -> overdubbing-open
-  multiply                                             when input-held-elsewhere  -> refuse input-held
-                                                       elif not plain             -> refuse not-plain
-                                                       elif at-ceiling            -> refuse at-ceiling
-                                                       else                       -> multiplying
-  undo                                                 when last-layer            -> sized
-                                                       else                       -> stay
-  clear                                                when fixed-rig             -> tape
-                                                       else                       -> empty
-  fix, size, level-off, sound, boundary, closed, lost                             -> stay
-  blank, free                                                                     -> refuse has-material
+  record                                         when input-held-elsewhere  -> refuse input-held
+                                                 elif not writable          -> refuse not-writable
+                                                 elif at-ceiling            -> refuse at-ceiling
+                                                 elif level-arm             -> armed-by-level
+                                                 elif one-pass              -> overdubbing-one-pass
+                                                 else                       -> overdubbing-open
+  multiply                                       when input-held-elsewhere  -> refuse input-held
+                                                 elif not plain             -> refuse not-plain
+                                                 elif at-ceiling            -> refuse at-ceiling
+                                                 else                       -> multiplying
+  undo                                           when last-layer            -> sized
+                                                 else                       -> stay
+  clear                                          when fixed-rig             -> tape
+                                                 else                       -> empty
+  fix, level-off, sound, boundary, closed, lost                             -> stay
+  size                                           when not has-grid          -> refuse no-grid
+                                                 else                       -> stay
+  blank, free                                                               -> refuse has-material
 
 multiplying:
   entry  start-multiply
