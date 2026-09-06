@@ -42,6 +42,7 @@ import Test.Harness (check, section)
 import Test.Property (properties)
 import Test.Unit.Codec (codecUnits)
 import Test.Unit.Commands (commandUnits)
+import Test.Unit.Conformance (conformanceUnits)
 import Test.Unit.Drive (driveUnits)
 import Test.Unit.Edges (edgeUnits)
 import Test.Unit.DSL (dslUnits, roundTripsMachine)
@@ -473,6 +474,7 @@ main = do
     , driveUnits
     , codecUnits
     , commandUnits
+    , conformanceUnits
     , exportUnits
     , lintUnits
     , hostUnits

@@ -29,6 +29,7 @@ import Effect (Effect)
 import Effect.Console (error, log)
 import Glassbox.Codec.JSON (parseSpec)
 import Glassbox.Canonical (canonicalBytes)
+import Glassbox.Conformance (printSuite, suiteFor)
 import Glassbox.Export.Embed (embedModule)
 import Glassbox.DSL.Print (renderAll)
 import Glassbox.Edges (defaultOptions, edgesOf)
@@ -49,6 +50,7 @@ main = do
   case drop2 args of
     [ "lint", inDir ] -> lintCmd inDir
     [ "canonical", inDir ] -> canonicalCmd inDir
+    [ "vectors", inDir, outDir ] -> vectorsCmd inDir outDir
     [ "embed", inDir, outDir, prefix ] -> embedCmd inDir outDir prefix defaultRegenerate
     [ "embed", inDir, outDir, prefix, how ] -> embedCmd inDir outDir prefix how
     [ "render-all", inDir, outDir ] -> renderAllCmd inDir outDir
@@ -68,6 +70,10 @@ usage = do
   error "  canonical <machines-dir>"
   error "      each machine's canonical form, the text a machine hash is taken over."
   error "      Byte-identical on every runtime by construction; that is the point."
+  error ""
+  error "  vectors <machines-dir> <out-dir>"
+  error "      each machine's conformance suite: every (state x event x assignment)"
+  error "      and what this runtime answers. Another runtime replays the file."
   error ""
   error "  render-all <machines-dir> <out-dir>"
   error "      every machine in every candidate syntax (Blocks, Table) and as a state diagram"
@@ -122,6 +128,22 @@ canonicalCmd inDir = do
   for_ machines \{ name, spec } -> do
     log ("=== " <> name <> " ===")
     log (canonicalBytes spec)
+
+-- | The conformance table of every machine, one file each.
+-- |
+-- | Written rather than printed, unlike `canonical`, because its consumer is a
+-- | test suite in another language that reads a directory — and committed, so
+-- | that a change to the runtime shows up as a diff in what it answers before
+-- | it shows up as a failure somewhere else.
+vectorsCmd :: FilePath -> FilePath -> Effect Unit
+vectorsCmd inDir outDir = do
+  machines <- readMachines inDir
+  ensureDir outDir
+  for_ machines \{ name, spec } -> do
+    let suite = suiteFor spec
+    writeTextFile UTF8 (concat [ outDir, name <> ".json" ]) (printSuite suite)
+    log $ name <> ".json  " <> show (length suite.vectors) <> " vectors, "
+      <> show (length suite.alarms) <> " alarms"
 
 renderAllCmd :: FilePath -> FilePath -> Effect Unit
 renderAllCmd inDir outDir = do
