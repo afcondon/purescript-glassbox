@@ -27,7 +27,6 @@ FACTS           MEANING
   top           This is the highest counted layer
   next-to-redo  This is the lowest undone layer
   was-on        It was on when it was undone
-  first-take    This take is the loop's first: no length yet
 
 REFUSALS         MEANING
   nothing-here   the slot holds nothing
@@ -47,11 +46,11 @@ COMMANDS       MEANING
 GRID   rows are states, columns are events
               start           sum             commit    on              off             window          undo            redo            clear  lost
   > free      writing         !nothing-here   .         !nothing-here   !nothing-here   !nothing-here   !nothing-here   !nothing-here   .      .
-    writing   !still-writing  !still-writing  sounding  !still-writing  !still-writing  !still-writing  !still-writing  !still-writing  free   [1]
-    summing   !still-writing  !still-writing  sounding  !still-writing  !still-writing  !still-writing  !still-writing  !still-writing  free   sounding
-    sounding  !occupied       summing         .         .               off             .               [2]             !not-undone     free   .
-    off       !occupied       summing         .         sounding        .               .               [3]             !not-undone     free   .
-    undone    writing         !not-counted    .         !not-counted    !not-counted    !not-counted    !not-counted    [4]             free   .
+    writing   !still-writing  !still-writing  sounding  !still-writing  !still-writing  !still-writing  !still-writing  !still-writing  free   free
+    summing   !still-writing  !still-writing  sounding  .               .               .               !still-writing  !still-writing  free   sounding
+    sounding  !occupied       summing         .         .               off             .               [1]             !not-undone     free   .
+    off       !occupied       summing         .         sounding        .               .               [2]             !not-undone     free   .
+    undone    writing         !not-counted    .         !not-counted    !not-counted    !not-counted    !not-counted    [3]             free   .
 
 KEY
   >     the initial state
@@ -60,16 +59,13 @@ KEY
   [n]   guarded, or declared twice — see CASES
 
 CASES
-  [1]  writing on lost
-         when first-take               -> free
-         else                          -> sounding
-  [2]  sounding on undo
+  [1]  sounding on undo
          when top                      -> undone
          else                          refuse not-top
-  [3]  off on undo
+  [2]  off on undo
          when top                      -> undone
          else                          refuse not-top
-  [4]  undone on redo
+  [3]  undone on redo
          when next-to-redo and was-on  -> sounding
          elif next-to-redo             -> off
          else                          refuse not-next

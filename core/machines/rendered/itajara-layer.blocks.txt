@@ -29,8 +29,19 @@
 # stack discipline — undo reaches only the highest counted slot, redo only
 # the lowest undone one — and the loop knows them, not the slot. `was-on`
 # is the history-state workaround the README names: an undone layer comes
-# back as it was, and the host remembers which. `first-take` tells a lost
-# device whether there is a loop to keep the partial layer in.
+# back as it was, and the host remembers which.
+#
+# WHAT THE DAEMON'S REPLAY CHANGED (2026-09-07, the first day). Two rules
+# were written from the loop artifact's side and the engine had reasons:
+# a lost device DROPS a partial overdub as it drops a partial first take —
+# a layer with a gap in it is worse than no layer (`drop_takes`) — so
+# `writing × lost` goes to Free whatever the take was, and the `first-take`
+# fact that told them apart is gone; and a layer a pass is summing into
+# still takes `on`, `off` and `window`, because the write head follows the
+# play head through whatever the layer is doing, so those three stay
+# rather than refuse. The loop artifact's `overdubbing-open × lost →
+# playing [close-layer]` still names the wrong command for that exit; the
+# loop's replay cannot see it and it is left as a known lie.
 #
 # WHAT THE MACHINE DOES NOT KNOW. Arguments and counting. `lw` stores the
 # window and the machine only says when a window is LEGAL (a counted
@@ -76,7 +87,6 @@ facts
   top           "This is the highest counted layer"
   next-to-redo  "This is the lowest undone layer"
   was-on        "It was on when it was undone"
-  first-take    "This take is the loop's first: no length yet"
 
 refusals
   nothing-here   "the slot holds nothing"
@@ -101,18 +111,17 @@ free:
 writing:
   entry  zero-slot, start-write
   exit   set-shape
-  start, sum, on, off, window, undo, redo                   -> refuse still-writing
-  commit                                                    -> sounding
-  clear                                                     -> free
-  lost                                     when first-take  -> free
-                                           else             -> sounding
+  start, sum, on, off, window, undo, redo  -> refuse still-writing
+  commit                                   -> sounding
+  clear, lost                              -> free
 
 summing:
   entry  start-write
   exit   redraw
-  start, sum, on, off, window, undo, redo  -> refuse still-writing
-  commit, lost                             -> sounding
-  clear                                    -> free
+  start, sum, undo, redo  -> refuse still-writing
+  commit, lost            -> sounding
+  on, off, window         -> stay
+  clear                   -> free
 
 sounding:
   start                               -> refuse occupied

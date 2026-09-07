@@ -7,7 +7,7 @@ stateDiagram-v2
     undone : Undone, kept
     [*] --> free
     free --> writing : a take starts here (r, x, t, cp, dp)
-    writing --> sounding : the write closed, the audio device was lost
+    writing --> sounding : the write closed
     writing --> free : the loop is cleared (c), the audio device was lost
     summing --> sounding : the write closed, the audio device was lost
     summing --> free : the loop is cleared (c)
