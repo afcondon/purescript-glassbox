@@ -74,7 +74,7 @@ import Prelude
 import Data.Array (length, sortBy)
 import Data.Int (fromNumber)
 import Data.Maybe (Maybe(..))
-import Data.Number (isFinite, isNaN)
+import Data.Number (isFinite)
 import Data.Number.Format (toString)
 import Data.String.Common (joinWith, replaceAll)
 import Data.String.Pattern (Pattern(..), Replacement(..))
@@ -242,11 +242,20 @@ value = case _ of
 -- | itself has no business deciding whether two machines are the same one.
 number :: Number -> String
 number n
-  | isNaN n = "nan"
+  | notANumber n = "nan"
   | not (isFinite n) = if n > 0.0 then "inf" else "-inf"
   | otherwise = case fromNumber n of
       Just i -> show i
       Nothing -> toString n
+
+-- | NaN is the one number that is not equal to itself.
+-- |
+-- | Written this way, not with `Data.Number.isNaN`, so that this module
+-- | builds on purerl: an Erlang float can be neither NaN nor infinite, and
+-- | purerl's `Data.Number` accordingly exports no `isNaN`, `nan` or
+-- | `infinity`. On the BEAM this is always false, which is the truth there.
+notANumber :: Number -> Boolean
+notANumber n = n /= n
 
 bool :: Boolean -> String
 bool b = if b then "true" else "false"

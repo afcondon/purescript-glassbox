@@ -114,15 +114,18 @@ encodeSpec = Codec.encode specCodec
 printSpec :: Spec -> String
 printSpec = J.stringify <<< encodeSpec
 
-foreign import stringifyPrettyImpl :: Json -> String
-
 -- | The artifact as the decoder understood it, re-encoded and indented.
 -- |
 -- | Deliberately NOT the bytes that arrived. Showing the round trip is the
 -- | point: if this differs from the file on disk, the codec lost something,
 -- | and it can be seen rather than inferred from a passing test.
+-- |
+-- | Two spaces, keys in the order the encoder emitted them. This is
+-- | argonaut's own indenting printer; it was a foreign function of this
+-- | module's until 2026-11-11, which was one JavaScript file every other
+-- | backend had to twin for no reason.
 printSpecPretty :: Spec -> String
-printSpecPretty = stringifyPrettyImpl <<< encodeSpec
+printSpecPretty = J.stringifyWithIndent 2 <<< encodeSpec
 
 -- =============================================================================
 -- Small codecs
