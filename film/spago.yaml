@@ -1,0 +1,21 @@
+package:
+  name: glassbox-film
+  description: "The geometry the promotional film draws: the library's own edge set and layout, as JSON"
+  dependencies:
+    - argonaut-core
+    - arrays
+    - console
+    - effect
+    - either
+    - foreign-object
+    - glassbox
+    - glassbox-draw
+    - hylograph-layout
+    - maybe
+    - node-buffer
+    - node-fs
+    - node-process
+    - prelude
+    - tuples
+  run:
+    main: Film.Main

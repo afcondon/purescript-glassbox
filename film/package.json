@@ -1,0 +1,1 @@
+{ "name": "glassbox-film", "private": true, "type": "module", "dependencies": { "puppeteer-core": "23.11.1" } }
