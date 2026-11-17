@@ -1,6 +1,13 @@
 package:
   name: glassbox
   description: "A state machine as a data artifact: run it, describe it, and hand it to somebody who does not write PureScript"
+  publish:
+    version: 0.1.0
+    license: MIT
+    location:
+      githubOwner: afcondon
+      githubRepo: purescript-glassbox
+      subdir: core
   dependencies:
     - argonaut-core: ">=7.0.0 <8.0.0"
     - arrays: ">=7.3.0 <8.0.0"

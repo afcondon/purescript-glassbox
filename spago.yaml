@@ -2,12 +2,8 @@ workspace:
   packageSet:
     registry: 80.8.0
   extraPackages:
-    # Both load-bearing against package set 80.8.0, which carries the
-    # published 0.3.0 of each. hylograph-graph is pinned because
-    # `Data.Graph.InducedTree` post-dates its v0.3.0 tag; hylograph-layout
-    # because it consumes that module and is itself ahead of its own tag.
-    # Drop both once the two are republished.
-    hylograph-layout:
-      path: ../purescript-hylograph-layout
-    hylograph-graph:
-      path: ../purescript-hylograph-graph
+    # Package set 80.8.0 carries 0.3.0 of each. glassbox-draw needs
+    # Data.Graph.InducedTree (hylograph-graph 0.3.1) and the state-machine
+    # layout with per-edge payloads (hylograph-layout 0.4.0).
+    hylograph-layout: "0.4.0"
+    hylograph-graph: "0.3.1"
